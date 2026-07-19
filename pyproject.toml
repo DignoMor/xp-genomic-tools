@@ -18,6 +18,7 @@ dependencies = [
     "biopython>=1.83",
     "pyBigWig>=0.3.22",
     "requests>=2.31",
+    "matplotlib>=3.7",
 ]
 
 [project.optional-dependencies]
@@ -25,9 +26,12 @@ dev = [
     "pytest>=7.0",
 ]
 
+[project.scripts]
+GenomicElementTools = "GenomicElementTools.__main__:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["RGTools*"]
+include = ["RGTools*", "GenomicElementTools*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

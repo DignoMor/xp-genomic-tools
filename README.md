@@ -1,28 +1,50 @@
-# RGTools
+# RGTools / xp-genomic-tools
 
-Pip-installable library for regulatory genomic data (BED-like regions, sequences,
-motifs, BigWig tracks). Part of **xp-genomic-tools**.
+Pip-installable library (`RGTools`) and CLI (`GenomicElementTools`) for regulatory
+genomic data (BED-like regions, sequences, motifs, BigWig tracks). Part of
+**xp-genomic-tools**.
 
 ## Install
 
 From this directory (`code/`):
 
 ```bash
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 Then:
 
 ```python
 from RGTools import BedTable3, GenomicElements, MemeMotif, ListFile, SingleBwTrack
+from GenomicElementTools.cli import GenomicElementTools
 ```
+
+## CLI
+
+After install, the `GenomicElementTools` console script is on `PATH`:
+
+```bash
+GenomicElementTools --help
+GenomicElementTools pad_region --help
+```
+
+You can also run the package module:
+
+```bash
+python -m GenomicElementTools --help
+```
+
+Subcommands include `count_single_bw`, `count_paired_bw`, `pad_region`,
+`bed2tssbed`, `onehot`, `motif_search`, `track2tss_bed`, `filter_motif_score`,
+`export`, `import`, `get_context_ge`, and `mask_op`.
 
 ## Layout
 
 ```
 code/
-  src/RGTools/     # library package
-  tests/           # unit tests (separate from this package tree)
+  src/RGTools/                 # library package
+  src/GenomicElementTools/     # GenomicElementTools CLI package
+  tests/                       # unit tests (separate from this package tree)
   pyproject.toml
 ```
 
@@ -40,9 +62,6 @@ Large-file fixtures (`hg38.fa`, ENCODE bigWigs) are optional. Point
 Ensembl SNP tests need network access; set `RGTOOLS_SKIP_NETWORK_TESTS=1` to
 skip them.
 
-CLI packages (`GenomicElementTools`, etc.) are out of scope for this library-only
-scaffold; entrypoints are not registered yet.
-
 ## Deviations from legacy (DignoMor/RGTools)
 
 - **Packaging**: src-layout + `pyproject.toml` (legacy was a flat module tree /
@@ -57,4 +76,9 @@ scaffold; entrypoints are not registered yet.
 - **Dependencies**: Flexible minimum pins (`>=`) instead of exact pins; Python
   `>=3.9`. NumPy is constrained to `>=1.24,<2` (legacy used 1.24.x) to avoid
   NumPy-2 binary incompatibilities with older optional stack packages.
-- **Not ported here**: legacy `doc/`, `scripts/`, CLI tooling.
+  `matplotlib` is a declared dependency (needed by `GenomicElementTools export Heatmap`).
+- **CLI packaging**: Legacy `GenomicElementTool` (flat scripts + RGTools submodule)
+  is packaged as `GenomicElementTools` under `src/` with relative imports and a
+  console-script entrypoint. Other CLI packages
+  (`ExogeneousSequenceTools`, `CountTableTools`) are not registered yet.
+- **Not ported here**: legacy `doc/` and `scripts/` from RGTools.
