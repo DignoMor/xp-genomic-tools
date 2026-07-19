@@ -1,8 +1,8 @@
 # RGTools / xp-genomic-tools
 
-Pip-installable library (`RGTools`) and CLI (`GenomicElementTools`) for regulatory
-genomic data (BED-like regions, sequences, motifs, BigWig tracks). Part of
-**xp-genomic-tools**.
+Pip-installable library (`RGTools`) and CLIs (`GenomicElementTools`,
+`ExogeneousSequenceTools`) for regulatory genomic data (BED-like regions,
+sequences, motifs, BigWig tracks). Part of **xp-genomic-tools**.
 
 ## Install
 
@@ -17,11 +17,14 @@ Then:
 ```python
 from RGTools import BedTable3, GenomicElements, MemeMotif, ListFile, SingleBwTrack
 from GenomicElementTools.cli import GenomicElementTools
+from ExogeneousSequenceTools.cli import ExogeneousSequenceTools
 ```
 
 ## CLI
 
-After install, the `GenomicElementTools` console script is on `PATH`:
+After install, the console scripts are on `PATH`:
+
+### GenomicElementTools
 
 ```bash
 GenomicElementTools --help
@@ -38,13 +41,28 @@ Subcommands include `count_single_bw`, `count_paired_bw`, `pad_region`,
 `bed2tssbed`, `onehot`, `motif_search`, `track2tss_bed`, `filter_motif_score`,
 `export`, `import`, `get_context_ge`, and `mask_op`.
 
+### ExogeneousSequenceTools
+
+```bash
+ExogeneousSequenceTools --help
+ExogeneousSequenceTools assemble --help
+```
+
+```bash
+python -m ExogeneousSequenceTools --help
+```
+
+Subcommands include `assemble`, `track_dim_reduction`, `mutagenesis`,
+`gen_track`, `print_stat`, `motif_search`, and `onehot`.
+
 ## Layout
 
 ```
 code/
-  src/RGTools/                 # library package
-  src/GenomicElementTools/     # GenomicElementTools CLI package
-  tests/                       # unit tests (separate from this package tree)
+  src/RGTools/                   # library package
+  src/GenomicElementTools/       # GenomicElementTools CLI package
+  src/ExogeneousSequenceTools/   # ExogeneousSequenceTools CLI package
+  tests/                         # unit tests (separate from this package tree)
   pyproject.toml
 ```
 
@@ -77,8 +95,8 @@ skip them.
   `>=3.9`. NumPy is constrained to `>=1.24,<2` (legacy used 1.24.x) to avoid
   NumPy-2 binary incompatibilities with older optional stack packages.
   `matplotlib` is a declared dependency (needed by `GenomicElementTools export Heatmap`).
-- **CLI packaging**: Legacy `GenomicElementTool` (flat scripts + RGTools submodule)
-  is packaged as `GenomicElementTools` under `src/` with relative imports and a
-  console-script entrypoint. Other CLI packages
-  (`ExogeneousSequenceTools`, `CountTableTools`) are not registered yet.
+- **CLI packaging**: Legacy `GenomicElementTool` / `ExogeneousSequenceTool`
+  (flat scripts + RGTools submodule) are packaged as `GenomicElementTools` /
+  `ExogeneousSequenceTools` under `src/` with relative imports and console-script
+  entrypoints. `CountTableTools` is not registered yet.
 - **Not ported here**: legacy `doc/` and `scripts/` from RGTools.
