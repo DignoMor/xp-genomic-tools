@@ -114,17 +114,15 @@ class TestLogger:
 
 
 class TestStr2Bool:
-    @pytest.mark.parametrize("token", ["", "FALSE", "false", "False"])
+    @pytest.mark.parametrize(
+        "token", ["", "FALSE", "false", "False", "NONE", "none", "None"]
+    )
     def test_falsy_tokens(self, token):
         assert str2bool(token) is False
 
     @pytest.mark.parametrize("token", ["TRUE", "yes", "0", "1", "anything"])
     def test_other_strings_are_true(self, token):
         assert str2bool(token) is True
-
-    # SPEC003 lists "None" as falsy but also flags this as an open gap;
-    # the installed API currently treats non-empty "None" as True.
-
 
 class TestStr2None:
     @pytest.mark.parametrize("token", ["NONE", "none", "None"])

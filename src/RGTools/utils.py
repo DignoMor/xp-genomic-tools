@@ -13,7 +13,7 @@ def str2bool(bool_str):
     if bool_str.upper() == "FALSE":
         return False
 
-    if bool_str.upper() == "None":
+    if bool_str.upper() == "NONE":
         return False
 
     return True

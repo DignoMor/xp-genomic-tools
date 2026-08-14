@@ -1,3 +1,4 @@
+"""Opt-in live Ensembl compatibility checks for SPEC009."""
 
 import os
 import unittest
@@ -8,7 +9,7 @@ from RGTools.SNP_utils import EnsemblRestSearch
 
 
 def _ensembl_reachable() -> bool:
-    if os.environ.get("RGTOOLS_SKIP_NETWORK_TESTS") == "1":
+    if os.environ.get("RGTOOLS_RUN_LIVE_ENSEMBL_TESTS") != "1":
         return False
     try:
         response = requests.get(
@@ -21,7 +22,10 @@ def _ensembl_reachable() -> bool:
         return False
 
 
-@unittest.skipUnless(_ensembl_reachable(), "Ensembl REST API unreachable or RGTOOLS_SKIP_NETWORK_TESTS=1")
+@unittest.skipUnless(
+    _ensembl_reachable(),
+    "set RGTOOLS_RUN_LIVE_ENSEMBL_TESTS=1 to run live Ensembl tests",
+)
 class TestEnsemblRestSearch(unittest.TestCase):
     def setUp(self):
         return super().setUp()

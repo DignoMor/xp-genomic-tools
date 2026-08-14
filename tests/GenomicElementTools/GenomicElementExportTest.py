@@ -1,3 +1,5 @@
+"""GenomicElementExport coverage for SPEC009 and SPEC014."""
+
 import argparse
 import contextlib
 import io
@@ -18,7 +20,7 @@ from tests._paths import FIXTURES_DIR, HAS_HG38, HG38_FA, SKIP_NO_HG38
 
 
 def _ensembl_reachable() -> bool:
-    if os.environ.get("RGTOOLS_SKIP_NETWORK_TESTS") == "1":
+    if os.environ.get("RGTOOLS_RUN_LIVE_ENSEMBL_TESTS") != "1":
         return False
     try:
         response = requests.get(
@@ -392,7 +394,7 @@ class GenomicElementExportTest(unittest.TestCase):
 
     @unittest.skipUnless(
         _ensembl_reachable(),
-        "Ensembl REST API unreachable or RGTOOLS_SKIP_NETWORK_TESTS=1",
+        "set RGTOOLS_RUN_LIVE_ENSEMBL_TESTS=1 to run live Ensembl tests",
     )
     def test_export_bed6poly(self):
         args = argparse.Namespace(
