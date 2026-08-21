@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +12,39 @@ from RGTools import MemeMotif
 
 FIXTURES_SPEC = Path(__file__).resolve().parent / "fixtures" / "spec"
 TINY_MEME = FIXTURES_SPEC / "tiny.meme"
+
+VALID_MEME_HEADER = """MEME version 4
+
+ALPHABET=ACGT
+
+strands: + -
+
+Background letter frequencies
+A 0.25 C 0.25 G 0.25 T 0.25
+
+"""
+
+
+def _write_meme(tmp_path: Path, body: str, name: str = "case.meme") -> Path:
+    path = tmp_path / name
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def _motif_block(
+    name: str = "SPEC_TINY",
+    rows: list[str] | None = None,
+    header: str | None = None,
+) -> str:
+    if header is None:
+        header = "letter-probability matrix: alength= 4 w= 3 nsites= 8 E= 1e-4"
+    if rows is None:
+        rows = [
+            "0.700000\t0.100000\t0.100000\t0.100000",
+            "0.100000\t0.700000\t0.100000\t0.100000",
+            "0.100000\t0.100000\t0.700000\t0.100000",
+        ]
+    return f"MOTIF {name}\n{header}\n" + "\n".join(rows) + "\n"
 
 # Expected PWM for SPEC_TINY in the vendored fixture (rows sum to 1).
 EXPECTED_PWM = np.array(
@@ -135,3 +169,265 @@ def test_search_one_motif_strand_plus_minus_both():
 def test_search_one_motif_invalid_strand():
     with pytest.raises(ValueError):
         MemeMotif.search_one_motif("ACGTTT", "ACGT", EXPECTED_PWM, strand="x")
+
+
+# --- SPEC006 supported-subset hardening ---
+
+
+def test_spec006_write_meme_file_path_and_stream_match(tmp_path):
+    mm = MemeMotif(str(TINY_MEME))
+    path_out = tmp_path / "path.meme"
+    mm.write_meme_file(str(path_out))
+    path_text = path_out.read_text(encoding="utf-8")
+
+    stream = io.StringIO()
+    mm.write_meme_file(stream)
+    stream_text = stream.getvalue()
+
+    assert stream_text == path_text
+    assert "0.700000" in path_text
+    assert path_text.count(".") >= 6  # six-decimal PWM serialization present
+
+
+def test_spec006_write_does_not_mutate_pwm_or_metadata(tmp_path):
+    mm = MemeMotif(str(TINY_MEME))
+    pwm_before = mm.get_motif_pwm("SPEC_TINY").copy()
+    motifs_before = list(mm.get_motif_list())
+    bg_before = list(mm.get_bg_freq())
+
+    mm.write_meme_file(str(tmp_path / "out.meme"))
+    stream = io.StringIO()
+    mm.write_meme_file(stream)
+
+    np.testing.assert_array_equal(mm.get_motif_pwm("SPEC_TINY"), pwm_before)
+    assert mm.get_motif_list() == motifs_before
+    assert mm.get_bg_freq() == bg_before
+
+
+def test_spec006_parse_rejects_duplicate_motif_names(tmp_path):
+    body = VALID_MEME_HEADER + _motif_block("DUP") + _motif_block("DUP")
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)duplicate|DUP"):
+        MemeMotif(str(path))
+
+
+def test_spec006_parse_rejects_malformed_matrix_header(tmp_path):
+    body = (
+        VALID_MEME_HEADER
+        + "MOTIF BAD\n"
+        + "letter-probability matrix: broken\n"
+        + "0.25 0.25 0.25 0.25\n"
+    )
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)letter-probability|matrix|header"):
+        MemeMotif(str(path))
+
+
+def test_spec006_parse_rejects_missing_meme_version(tmp_path):
+    body = """ALPHABET=ACGT
+
+strands: + -
+
+Background letter frequencies
+A 0.25 C 0.25 G 0.25 T 0.25
+
+""" + _motif_block()
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)MEME version"):
+        MemeMotif(str(path))
+
+
+def test_spec006_parse_rejects_truncated_matrix(tmp_path):
+    body = (
+        VALID_MEME_HEADER
+        + _motif_block(
+            rows=[
+                "0.700000\t0.100000\t0.100000\t0.100000",
+                "0.100000\t0.700000\t0.100000\t0.100000",
+            ]
+        )
+    )
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)truncat|row|matrix|motif"):
+        MemeMotif(str(path))
+
+
+def test_spec006_parse_rejects_wrong_row_width(tmp_path):
+    body = (
+        VALID_MEME_HEADER
+        + _motif_block(
+            rows=[
+                "0.700000\t0.100000\t0.100000\t0.100000",
+                "0.100000\t0.700000\t0.200000",
+                "0.100000\t0.100000\t0.700000\t0.100000",
+            ]
+        )
+    )
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)width|column|alphabet|row"):
+        MemeMotif(str(path))
+
+
+def test_spec006_parse_rejects_unnormalized_pwm_row(tmp_path):
+    body = (
+        VALID_MEME_HEADER
+        + _motif_block(
+            rows=[
+                "0.900000\t0.100000\t0.100000\t0.100000",
+                "0.100000\t0.700000\t0.100000\t0.100000",
+                "0.100000\t0.100000\t0.700000\t0.100000",
+            ]
+        )
+    )
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)sum|normal"):
+        MemeMotif(str(path))
+
+
+def test_spec006_parse_rejects_negative_pwm_value(tmp_path):
+    body = (
+        VALID_MEME_HEADER
+        + _motif_block(
+            rows=[
+                "-0.100000\t0.700000\t0.200000\t0.200000",
+                "0.100000\t0.700000\t0.100000\t0.100000",
+                "0.100000\t0.100000\t0.700000\t0.100000",
+            ]
+        )
+    )
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)negative|non-?negative|PWM"):
+        MemeMotif(str(path))
+
+
+def test_spec006_parse_rejects_nonfinite_pwm_value(tmp_path):
+    body = (
+        VALID_MEME_HEADER
+        + _motif_block(
+            rows=[
+                "nan\t0.333333\t0.333333\t0.333334",
+                "0.100000\t0.700000\t0.100000\t0.100000",
+                "0.100000\t0.100000\t0.700000\t0.100000",
+            ]
+        )
+    )
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)finite|nan|PWM"):
+        MemeMotif(str(path))
+
+
+def test_spec006_parse_rejects_invalid_background_sum(tmp_path):
+    body = """MEME version 4
+
+ALPHABET=ACGT
+
+strands: + -
+
+Background letter frequencies
+A 0.5 C 0.5 G 0.5 T 0.5
+
+""" + _motif_block()
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)background|sum|normal"):
+        MemeMotif(str(path))
+
+
+def test_spec006_parse_rejects_negative_background(tmp_path):
+    body = """MEME version 4
+
+ALPHABET=ACGT
+
+strands: + -
+
+Background letter frequencies
+A 0.5 C 0.5 G 0.25 T -0.25
+
+""" + _motif_block()
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)background|negative"):
+        MemeMotif(str(path))
+
+
+def test_spec006_parse_rejects_invalid_nsites_metadata(tmp_path):
+    body = (
+        VALID_MEME_HEADER
+        + _motif_block(
+            header="letter-probability matrix: alength= 4 w= 3 nsites= notanumber E= 1e-4"
+        )
+    )
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)nsites|metadata"):
+        MemeMotif(str(path))
+
+
+def test_spec006_add_motif_rejects_duplicate_name_and_negative_pwm():
+    mm = MemeMotif()
+    mm.set_meme_version("4")
+    mm.set_alphabet("ACGT")
+    mm.set_strands(["+", "-"])
+    mm.set_bg_freq([0.25, 0.25, 0.25, 0.25])
+    motif_info = {
+        "alphabet_length": 4,
+        "motif_length": 3,
+        "num_source_sites": 4,
+        "source_eval": 0.01,
+        "pwm": EXPECTED_PWM.copy(),
+    }
+    mm.add_motif("OK", motif_info)
+    with pytest.raises(ValueError, match="(?i)duplicate|OK"):
+        mm.add_motif("OK", motif_info)
+
+    bad = EXPECTED_PWM.copy()
+    bad[0, 0] = -0.1
+    bad[0, 1] = 0.9
+    motif_info_neg = {
+        "alphabet_length": 4,
+        "motif_length": 3,
+        "num_source_sites": 4,
+        "source_eval": 0.01,
+        "pwm": bad,
+    }
+    with pytest.raises(ValueError, match="(?i)negative|non-?negative|PWM"):
+        mm.add_motif("NEG", motif_info_neg)
+
+
+def test_spec006_add_motif_rejects_invalid_dimensions_and_eval():
+    mm = MemeMotif()
+    mm.set_meme_version("4")
+    mm.set_alphabet("ACGT")
+    mm.set_strands(["+", "-"])
+    mm.set_bg_freq([0.25, 0.25, 0.25, 0.25])
+    with pytest.raises(ValueError, match="(?i)dimension|alphabet_length|motif_length"):
+        mm.add_motif(
+            "BAD_DIM",
+            {
+                "alphabet_length": 0,
+                "motif_length": 3,
+                "num_source_sites": 4,
+                "source_eval": 0.01,
+                "pwm": EXPECTED_PWM.copy(),
+            },
+        )
+    with pytest.raises(ValueError, match="(?i)E-value|finite|metadata"):
+        mm.add_motif(
+            "BAD_E",
+            {
+                "alphabet_length": 4,
+                "motif_length": 3,
+                "num_source_sites": 4,
+                "source_eval": float("nan"),
+                "pwm": EXPECTED_PWM.copy(),
+            },
+        )
+
+
+def test_spec006_parse_rejects_invalid_alength_dimension(tmp_path):
+    body = (
+        VALID_MEME_HEADER
+        + _motif_block(
+            header="letter-probability matrix: alength= 0 w= 3 nsites= 8 E= 1e-4"
+        )
+    )
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)dimension|alength|w"):
+        MemeMotif(str(path))
