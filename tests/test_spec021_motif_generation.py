@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from RGTools import MemeMotif
-from RGTools.MotifGeneration import iter_pwm_sequences, make_anti_motifs
+from RGTools.MotifGeneration import iter_pwm_sequences, iter_random_sequences, make_anti_motifs
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 TINY_MEME = FIXTURES / "spec" / "tiny.meme"
@@ -188,3 +188,42 @@ def test_spec021_iter_pwm_sequences_rejects_nonpositive_count():
     source = MemeMotif(str(TINY_MEME))
     with pytest.raises(ValueError, match="positive"):
         list(iter_pwm_sequences(source, "SPEC_TINY", 0, seed=0))
+
+
+def test_spec021_iter_random_sequences_seed_zero_golden():
+    """iter_random_sequences reproduces golden output for seed 0 with default ACGT."""
+    sequences = list(iter_random_sequences(4, 3, seed=0))
+    assert sequences == ["TTAG", "TTGT", "GCCG"]
+
+
+def test_spec021_iter_random_sequences_preserves_alphabet_order():
+    """Sampling respects user-supplied alphabet symbol order."""
+    sequences = list(iter_random_sequences(3, 2, alphabet="XY", seed=1))
+    assert all(set(seq) <= {"X", "Y"} for seq in sequences)
+    assert sequences == ["XXY", "XYY"]
+
+
+def test_spec021_iter_random_sequences_allows_duplicates():
+    """Duplicate output sequences are permitted."""
+    sequences = list(iter_random_sequences(1, 5, alphabet="A", seed=0))
+    assert sequences == ["A", "A", "A", "A", "A"]
+
+
+def test_spec021_iter_random_sequences_isolated_from_global_rng():
+    """Random sequence generation leaves process-global random state unchanged."""
+    before = random.getstate()
+    list(iter_random_sequences(5, 2, seed=7))
+    after = random.getstate()
+    assert before == after
+
+
+def test_spec021_iter_random_sequences_rejects_duplicate_alphabet():
+    """Duplicate alphabet characters fail before yielding output."""
+    with pytest.raises(ValueError, match="unique"):
+        list(iter_random_sequences(2, 1, alphabet="AAC"))
+
+
+def test_spec021_iter_random_sequences_rejects_nonpositive_length():
+    """Non-positive sequence lengths fail before yielding output."""
+    with pytest.raises(ValueError, match="sequence_length"):
+        list(iter_random_sequences(0, 1, seed=0))

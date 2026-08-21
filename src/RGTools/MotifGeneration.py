@@ -59,6 +59,35 @@ def iter_pwm_sequences(
         yield "".join(positions)
 
 
+def iter_random_sequences(
+    sequence_length: int,
+    num_sequences: int,
+    *,
+    alphabet: str = "ACGT",
+    seed: int | None = None,
+) -> Iterator[str]:
+    """Sample fixed-length sequences uniformly from ``alphabet`` with replacement."""
+    if sequence_length <= 0:
+        raise ValueError(
+            f"sequence_length must be a positive integer, found {sequence_length}."
+        )
+    if num_sequences <= 0:
+        raise ValueError(
+            f"num_sequences must be a positive integer, found {num_sequences}."
+        )
+    if not alphabet:
+        raise ValueError("alphabet must contain at least one character.")
+    if len(set(alphabet)) != len(alphabet):
+        raise ValueError(
+            f"alphabet characters must be unique, found duplicate symbols in {alphabet!r}."
+        )
+
+    symbols = list(alphabet)
+    rng = random.Random(seed)
+    for _ in range(num_sequences):
+        yield "".join(rng.choice(symbols) for _ in range(sequence_length))
+
+
 def make_anti_motifs(meme: MemeMotif) -> MemeMotif:
     """Derive an anti-motif collection from every motif in ``meme``.
 
