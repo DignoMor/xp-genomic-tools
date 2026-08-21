@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 
 from .anti_motif import AntiMotif
-from .planned import Barcodes
+from .barcodes import Barcodes
 from .pwm_seq import PwmSeq
 from .random_seq import RandomSeq
 
@@ -29,7 +29,7 @@ class MotifTools:
 
         parser_barcodes = subparsers.add_parser(
             "barcodes",
-            help="Enumerate motif-filtered barcodes (planned).",
+            help="Enumerate motif-filtered barcodes.",
         )
         Barcodes.set_parser(parser_barcodes)
 

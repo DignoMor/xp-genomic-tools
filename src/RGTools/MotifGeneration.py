@@ -6,6 +6,7 @@ import math
 import random
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from itertools import product
 
 import numpy as np
 
@@ -313,14 +314,8 @@ def iter_barcodes(
         )
 
     symbols = list(alphabet)
-    if barcode_length == 1:
-        candidates = symbols
-    else:
-        candidates = [""]
-        for _ in range(barcode_length):
-            candidates = [prefix + symbol for prefix in candidates for symbol in symbols]
-
-    for candidate in candidates:
+    for candidate_tuple in product(symbols, repeat=barcode_length):
+        candidate = "".join(candidate_tuple)
         if candidate_violates_exclusions(candidate, meme, exclusion_tuple):
             continue
         yield candidate
