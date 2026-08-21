@@ -6,40 +6,6 @@ from __future__ import annotations
 def _planned(subcommand: str) -> None:
     raise ValueError(f"{subcommand} is planned but not yet implemented.")
 
-
-class RandomSeq:
-    @staticmethod
-    def set_parser(parser):
-        parser.add_argument("--sequence_length", type=int, required=True)
-        parser.add_argument("--num_sequences", type=int, required=True)
-        parser.add_argument("--alphabet", default="ACGT")
-        parser.add_argument("--motif_file")
-        parser.add_argument("--exclude", action="append")
-        parser.add_argument("--seed")
-        parser.add_argument("--max_attempts", type=int, default=10000)
-        parser.add_argument("--output", required=True)
-        parser.add_argument("--force", action="store_true", default=False)
-
-    @staticmethod
-    def main(args):
-        _planned("random_seq")
-
-
-class PwmSeq:
-    @staticmethod
-    def set_parser(parser):
-        parser.add_argument("--motif_file", required=True)
-        parser.add_argument("--motif_name", required=True)
-        parser.add_argument("--num_sequences", type=int, required=True)
-        parser.add_argument("--seed")
-        parser.add_argument("--output", required=True)
-        parser.add_argument("--force", action="store_true", default=False)
-
-    @staticmethod
-    def main(args):
-        _planned("pwm_seq")
-
-
 class Barcodes:
     @staticmethod
     def set_parser(parser):

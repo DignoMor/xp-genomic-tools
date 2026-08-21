@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 
 from .anti_motif import AntiMotif
-from .planned import Barcodes, PwmSeq, RandomSeq
+from .planned import Barcodes
+from .pwm_seq import PwmSeq
+from .random_seq import RandomSeq
 
 
 class MotifTools:
@@ -15,13 +17,13 @@ class MotifTools:
 
         parser_random = subparsers.add_parser(
             "random_seq",
-            help="Generate random sequences (planned).",
+            help="Generate random sequences.",
         )
         RandomSeq.set_parser(parser_random)
 
         parser_pwm = subparsers.add_parser(
             "pwm_seq",
-            help="Sample sequences from one PWM (planned).",
+            help="Sample sequences from one PWM.",
         )
         PwmSeq.set_parser(parser_pwm)
 
