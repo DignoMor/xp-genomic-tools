@@ -2,9 +2,61 @@
 
 from __future__ import annotations
 
+import random
+from collections.abc import Iterator
+
 import numpy as np
 
 from .MemeMotif import MemeMotif, _BACKGROUND_SUM_ATOL, _PWM_ROW_ATOL
+
+
+def iter_pwm_sequences(
+    meme: MemeMotif,
+    motif_name: str,
+    num_sequences: int,
+    *,
+    seed: int | None = None,
+) -> Iterator[str]:
+    """Sample ``num_sequences`` sequences from one motif PWM using the MEME alphabet."""
+    motif_names = meme.get_motif_list()
+    if not motif_names:
+        raise ValueError("MEME collection must contain at least one motif.")
+    if num_sequences <= 0:
+        raise ValueError(
+            f"num_sequences must be a positive integer, found {num_sequences}."
+        )
+    if motif_name not in meme.motif_info_dict:
+        available = ", ".join(motif_names)
+        raise ValueError(
+            f"Unknown motif name {motif_name!r}. Available motifs: {available}."
+        )
+
+    alphabet = list(meme.get_alphabet())
+    alphabet_length = len(alphabet)
+    motif_alphabet_length = meme.get_motif_alphabet_length(motif_name)
+    if motif_alphabet_length != alphabet_length:
+        raise ValueError(
+            f"Alphabet length mismatch for motif {motif_name!r}: collection has "
+            f"{alphabet_length} symbols but motif declares alength="
+            f"{motif_alphabet_length}."
+        )
+
+    pwm = np.asarray(meme.get_motif_pwm(motif_name), dtype=float)
+    motif_length = meme.get_motif_length(motif_name)
+    if pwm.shape != (motif_length, alphabet_length):
+        raise ValueError(
+            f"PWM shape mismatch for motif {motif_name!r}: expected "
+            f"({motif_length}, {alphabet_length}), found {pwm.shape}."
+        )
+    MemeMotif._validate_pwm(pwm, motif_name)
+
+    rng = random.Random(seed)
+    for _ in range(num_sequences):
+        positions = [
+            rng.choices(alphabet, weights=pwm[row_index], k=1)[0]
+            for row_index in range(motif_length)
+        ]
+        yield "".join(positions)
 
 
 def make_anti_motifs(meme: MemeMotif) -> MemeMotif:

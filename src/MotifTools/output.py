@@ -10,6 +10,17 @@ from pathlib import Path
 STDOUT_OUTPUT = "-"
 
 
+def format_fasta(records: list[tuple[str, str]]) -> str:
+    """Format sequence records as UTF-8 FASTA with LF line endings."""
+    if not records:
+        return ""
+    lines: list[str] = []
+    for record_id, sequence in records:
+        lines.append(f">{record_id}")
+        lines.append(sequence)
+    return "\n".join(lines) + "\n"
+
+
 def validate_output_flags(output: str, force: bool) -> None:
     if output == STDOUT_OUTPUT and force:
         raise ValueError("--output - cannot be combined with --force.")

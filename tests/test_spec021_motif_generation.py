@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import copy
+import random
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from RGTools import MemeMotif
-from RGTools.MotifGeneration import make_anti_motifs
+from RGTools.MotifGeneration import iter_pwm_sequences, make_anti_motifs
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 TINY_MEME = FIXTURES / "spec" / "tiny.meme"
@@ -136,3 +137,54 @@ def test_spec021_make_anti_motifs_rejects_invalid_pwm_rows(tmp_path):
 
     with pytest.raises(ValueError, match="PWM rows must sum to 1.0"):
         make_anti_motifs(meme)
+
+
+def test_spec021_iter_pwm_sequences_seed_zero_golden():
+    """iter_pwm_sequences reproduces golden output for seed 0 including seed validity."""
+    source = MemeMotif(str(TINY_MEME))
+    sequences = list(iter_pwm_sequences(source, "SPEC_TINY", 3, seed=0))
+    assert sequences == ["GCG", "ACG", "CCG"]
+    assert all(len(seq) == 3 for seq in sequences)
+
+
+def test_spec021_iter_pwm_sequences_does_not_mutate_source():
+    """Source PWM arrays remain unchanged after PWM sampling."""
+    source = MemeMotif(str(TINY_MEME))
+    pwm_before = source.get_motif_pwm("SPEC_TINY").copy()
+    list(iter_pwm_sequences(source, "SPEC_TINY", 5, seed=1))
+    assert np.array_equal(source.get_motif_pwm("SPEC_TINY"), pwm_before)
+
+
+def test_spec021_iter_pwm_sequences_isolated_from_global_rng():
+    """PWM sampling leaves process-global random state unchanged."""
+    source = MemeMotif(str(TINY_MEME))
+    before = random.getstate()
+    list(iter_pwm_sequences(source, "SPEC_TINY", 2, seed=7))
+    after = random.getstate()
+    assert before == after
+
+
+def test_spec021_iter_pwm_sequences_rejects_empty_collection():
+    """Empty MEME collections fail before yielding sequences."""
+    empty = MemeMotif()
+    empty.set_meme_version("4")
+    empty.set_alphabet("ACGT")
+    empty.set_strands(["+", "-"])
+    empty.set_bg_freq([0.25, 0.25, 0.25, 0.25])
+
+    with pytest.raises(ValueError, match="at least one motif"):
+        list(iter_pwm_sequences(empty, "SPEC_TINY", 1, seed=0))
+
+
+def test_spec021_iter_pwm_sequences_rejects_unknown_motif():
+    """Unknown motif names fail before yielding sequences."""
+    source = MemeMotif(str(TINY_MEME))
+    with pytest.raises(ValueError, match="MISSING"):
+        list(iter_pwm_sequences(source, "MISSING", 1, seed=0))
+
+
+def test_spec021_iter_pwm_sequences_rejects_nonpositive_count():
+    """Non-positive sequence counts fail before yielding output."""
+    source = MemeMotif(str(TINY_MEME))
+    with pytest.raises(ValueError, match="positive"):
+        list(iter_pwm_sequences(source, "SPEC_TINY", 0, seed=0))
