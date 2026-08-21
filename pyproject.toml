@@ -29,10 +29,11 @@ dev = [
 [project.scripts]
 GenomicElementTools = "GenomicElementTools.__main__:main"
 ExogeneousSequenceTools = "ExogeneousSequenceTools.__main__:main"
+MotifTools = "MotifTools.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["RGTools*", "GenomicElementTools*", "ExogeneousSequenceTools*"]
+include = ["RGTools*", "GenomicElementTools*", "ExogeneousSequenceTools*", "MotifTools*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
