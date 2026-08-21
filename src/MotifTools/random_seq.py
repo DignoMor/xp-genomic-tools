@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from RGTools.MotifGeneration import iter_random_sequences
 
+from .exclusions import resolve_exclusion_inputs
 from .output import format_fasta, validate_output_flags, write_text_output
 
 
@@ -29,12 +30,12 @@ class RandomSeq:
         )
         parser.add_argument(
             "--motif_file",
-            help="MEME motif collection for exclusions (not yet delivered).",
+            help="MEME motif collection for exclusions.",
         )
         parser.add_argument(
             "--exclude",
             action="append",
-            help="Motif exclusion MOTIF=CUTOFF (not yet delivered).",
+            help="Motif exclusion MOTIF=CUTOFF (repeatable).",
         )
         parser.add_argument(
             "--seed",
@@ -62,22 +63,16 @@ class RandomSeq:
     @staticmethod
     def main(args):
         validate_output_flags(args.output, args.force)
-        if args.motif_file is not None:
-            raise ValueError(
-                "Motif exclusion for random_seq is not yet delivered; "
-                "omit --motif_file for unconstrained generation."
-            )
-        if args.exclude:
-            raise ValueError(
-                "Motif exclusion for random_seq is not yet delivered; "
-                "omit --exclude for unconstrained generation."
-            )
+        meme, exclusions = resolve_exclusion_inputs(args.motif_file, args.exclude)
 
         sequences = iter_random_sequences(
             args.sequence_length,
             args.num_sequences,
             alphabet=args.alphabet,
             seed=args.seed,
+            meme=meme,
+            exclusions=exclusions,
+            max_attempts=args.max_attempts,
         )
         records = [
             (f"random_seq_{index}", sequence)

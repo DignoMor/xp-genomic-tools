@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import sys
 
+from RGTools.MotifGeneration import SequenceGenerationExhaustedError
+
 from .cli import MotifTools
 
 
@@ -17,6 +19,9 @@ def main(argv=None):
     except ValueError as exc:
         print(exc, file=sys.stderr)
         sys.exit(2)
+    except SequenceGenerationExhaustedError as exc:
+        print(exc, file=sys.stderr)
+        sys.exit(1)
     except OSError as exc:
         print(exc, file=sys.stderr)
         sys.exit(1)
