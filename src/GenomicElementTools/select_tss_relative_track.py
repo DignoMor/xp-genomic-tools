@@ -6,6 +6,10 @@ import math
 
 import numpy as np
 
+from GenomicElementTools.annotation_publish import (
+    annotation_suffix,
+    publish_paired_annotations,
+)
 from RGTools.GenomicElements import GenomicElements
 from RGTools.TSSRelativeCoordinates import (
     iter_relaxed_window,
@@ -57,15 +61,20 @@ class SelectTssRelativeTrack:
         )
         parser.add_argument(
             "--coordinate_opath",
-            help="Output path for selected TSS-relative coordinates (.npy).",
+            help="Output path for selected TSS-relative coordinates (.npy or .npz).",
             required=True,
             type=str,
         )
         parser.add_argument(
             "--mask_opath",
-            help="Output path for match mask (.npy).",
+            help="Output path for match mask (.npy or .npz).",
             required=True,
             type=str,
+        )
+        parser.add_argument(
+            "--force",
+            help="Replace existing coordinate/mask destinations after successful computation.",
+            action="store_true",
         )
 
     @staticmethod
@@ -94,6 +103,11 @@ class SelectTssRelativeTrack:
             raise ValueError(
                 f"min_score must be finite; got {args.min_score!r}."
             )
+
+        # Reject unsupported I/O suffixes before any publication side effects.
+        annotation_suffix(args.track_npy)
+        annotation_suffix(args.coordinate_opath)
+        annotation_suffix(args.mask_opath)
 
         ge = GenomicElements(
             region_file_path=args.region_file_path,
@@ -172,7 +186,10 @@ class SelectTssRelativeTrack:
                 mask[i, 0] = True
 
         # Publish only after every row is fully validated and scored.
-        ge.load_region_stat_from_arr("tss_rel_coord", coords)
-        ge.load_mask_from_arr("tss_rel_mask", mask)
-        ge.save_anno_npy("tss_rel_coord", args.coordinate_opath)
-        ge.save_anno_npy("tss_rel_mask", args.mask_opath)
+        publish_paired_annotations(
+            coordinate_path=args.coordinate_opath,
+            coordinate_array=coords,
+            mask_path=args.mask_opath,
+            mask_array=mask,
+            force=bool(args.force),
+        )

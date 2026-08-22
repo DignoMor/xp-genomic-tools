@@ -42,8 +42,9 @@ def _base_argv(
     relaxation: int = 0,
     track_window_size: int = 1,
     region_file_type: str = "TREbed",
+    force: bool = False,
 ) -> list[str]:
-    return [
+    argv = [
         "select_tss_relative_track",
         "--region_file_path",
         str(trebed),
@@ -66,6 +67,9 @@ def _base_argv(
         "--mask_opath",
         str(mask_opath),
     ]
+    if force:
+        argv.append("--force")
+    return argv
 
 
 def _default_track() -> np.ndarray:
@@ -903,3 +907,404 @@ def test_plus_and_minus_unavailable_windows_both_fail(tmp_path: Path):
                 relaxation=6,
             )
         )
+
+
+def test_single_array_npz_input_and_outputs(tmp_path: Path):
+    """Single-array NPZ track input and .npz destinations round-trip."""
+    track = _default_track()
+    track_path = tmp_path / "track.npz"
+    np.savez_compressed(track_path, track)
+    coord_out = tmp_path / "coord.npz"
+    mask_out = tmp_path / "mask.npz"
+
+    _run_cli(
+        _base_argv(
+            TINY_TREBED,
+            track_path,
+            coord_out,
+            mask_out,
+            target_coord=1,
+            min_score=1.5,
+        )
+    )
+
+    ge = GenomicElements(
+        region_file_path=str(TINY_TREBED),
+        region_file_type="TREbed",
+        fasta_path=None,
+    )
+    ge.load_region_anno_from_npy("coord", str(coord_out), anno_type="stat")
+    ge.load_region_anno_from_npy("mask", str(mask_out), anno_type="mask")
+    assert np.array_equal(ge.get_stat_arr("coord").ravel(), [1, 0, 0])
+    assert np.array_equal(ge.get_mask_arr("mask").ravel(), [True, False, False])
+
+
+def test_unsupported_output_suffix_rejected_before_publication(tmp_path: Path):
+    track_path = _build_track(tmp_path, _default_track())
+    with pytest.raises(ValueError, match=r"suffix|\.npy|\.npz"):
+        _run_cli(
+            _base_argv(
+                TINY_TREBED,
+                track_path,
+                tmp_path / "coord.txt",
+                tmp_path / "mask.npy",
+                target_coord=1,
+                min_score=1.5,
+            )
+        )
+    assert not (tmp_path / "coord.txt").exists()
+    assert not (tmp_path / "mask.npy").exists()
+
+
+def test_unsupported_track_suffix_rejected_before_publication(tmp_path: Path):
+    track_path = tmp_path / "track.txt"
+    track_path.write_text("not-an-array")
+    with pytest.raises(ValueError, match=r"suffix|\.npy|\.npz"):
+        _run_cli(
+            _base_argv(
+                TINY_TREBED,
+                track_path,
+                tmp_path / "coord.npy",
+                tmp_path / "mask.npy",
+            )
+        )
+    assert not (tmp_path / "coord.npy").exists()
+    assert not (tmp_path / "mask.npy").exists()
+
+
+def test_refuses_existing_destinations_without_force(tmp_path: Path):
+    track_path = _build_track(tmp_path, _default_track())
+    coord_out = tmp_path / "coord.npy"
+    mask_out = tmp_path / "mask.npy"
+    prior_coords = np.asarray([[9], [8], [7]], dtype=np.int64)
+    prior_mask = np.asarray([[False], [True], [False]], dtype=bool)
+    np.save(coord_out, prior_coords)
+    np.save(mask_out, prior_mask)
+    prior_coord_bytes = coord_out.read_bytes()
+    prior_mask_bytes = mask_out.read_bytes()
+
+    with pytest.raises(OSError, match=r"[Rr]efusing|overwrite|--force"):
+        _run_cli(
+            _base_argv(
+                TINY_TREBED,
+                track_path,
+                coord_out,
+                mask_out,
+                target_coord=1,
+                min_score=1.5,
+            )
+        )
+
+    assert coord_out.read_bytes() == prior_coord_bytes
+    assert mask_out.read_bytes() == prior_mask_bytes
+
+
+def test_refuses_when_only_one_destination_exists(tmp_path: Path):
+    """Either existing destination blocks both publications without --force."""
+    track_path = _build_track(tmp_path, _default_track())
+    coord_out = tmp_path / "coord.npy"
+    mask_out = tmp_path / "mask.npy"
+    np.save(coord_out, np.asarray([[1], [2], [3]], dtype=np.int64))
+    prior = coord_out.read_bytes()
+
+    with pytest.raises(OSError, match=r"[Rr]efusing|overwrite|--force"):
+        _run_cli(
+            _base_argv(
+                TINY_TREBED,
+                track_path,
+                coord_out,
+                mask_out,
+                target_coord=1,
+                min_score=1.5,
+            )
+        )
+
+    assert coord_out.read_bytes() == prior
+    assert not mask_out.exists()
+
+
+def test_force_replaces_both_existing_destinations(tmp_path: Path):
+    track_path = _build_track(tmp_path, _default_track())
+    coord_out = tmp_path / "coord.npy"
+    mask_out = tmp_path / "mask.npy"
+    np.save(coord_out, np.asarray([[9], [9], [9]], dtype=np.int64))
+    np.save(mask_out, np.asarray([[False], [False], [False]], dtype=bool))
+
+    _run_cli(
+        _base_argv(
+            TINY_TREBED,
+            track_path,
+            coord_out,
+            mask_out,
+            target_coord=1,
+            min_score=1.5,
+            force=True,
+        )
+    )
+
+    assert np.array_equal(np.load(coord_out).ravel(), [1, 0, 0])
+    assert np.array_equal(np.load(mask_out).ravel(), [True, False, False])
+    assert not (tmp_path / f".{coord_out.name}.bak").exists()
+    assert not (tmp_path / f".{mask_out.name}.bak").exists()
+    assert not (tmp_path / f".{coord_out.stem}.staging{coord_out.suffix}").exists()
+    assert not (tmp_path / f".{mask_out.stem}.staging{mask_out.suffix}").exists()
+
+
+def test_missing_parent_directory_fails(tmp_path: Path):
+    track_path = _build_track(tmp_path, _default_track())
+    missing_parent = tmp_path / "missing_dir"
+    with pytest.raises(OSError, match=r"parent directory|does not exist"):
+        _run_cli(
+            _base_argv(
+                TINY_TREBED,
+                track_path,
+                missing_parent / "coord.npy",
+                tmp_path / "mask.npy",
+                target_coord=1,
+                min_score=1.5,
+            )
+        )
+
+
+def test_interrupted_staging_remnant_reported_without_cleanup(tmp_path: Path):
+    track_path = _build_track(tmp_path, _default_track())
+    coord_out = tmp_path / "coord.npy"
+    mask_out = tmp_path / "mask.npy"
+    remnant = tmp_path / f".{coord_out.stem}.staging{coord_out.suffix}"
+    remnant.write_bytes(b"stale-staging")
+    remnant_bytes = remnant.read_bytes()
+
+    with pytest.raises(OSError, match=r"[Ii]nterrupted|remnant|staging"):
+        _run_cli(
+            _base_argv(
+                TINY_TREBED,
+                track_path,
+                coord_out,
+                mask_out,
+                target_coord=1,
+                min_score=1.5,
+            )
+        )
+
+    assert remnant.exists()
+    assert remnant.read_bytes() == remnant_bytes
+    assert not coord_out.exists()
+    assert not mask_out.exists()
+
+
+def test_interrupted_backup_remnant_reported_without_cleanup(tmp_path: Path):
+    track_path = _build_track(tmp_path, _default_track())
+    coord_out = tmp_path / "coord.npy"
+    mask_out = tmp_path / "mask.npy"
+    remnant = tmp_path / f".{mask_out.name}.bak"
+    remnant.write_bytes(b"stale-backup")
+    remnant_bytes = remnant.read_bytes()
+
+    with pytest.raises(OSError, match=r"[Ii]nterrupted|remnant|\.bak"):
+        _run_cli(
+            _base_argv(
+                TINY_TREBED,
+                track_path,
+                coord_out,
+                mask_out,
+                target_coord=1,
+                min_score=1.5,
+            )
+        )
+
+    assert remnant.exists()
+    assert remnant.read_bytes() == remnant_bytes
+
+
+def test_force_rollback_on_second_destination_replace_failure(tmp_path: Path, monkeypatch):
+    """Induced os.replace failure on the second destination rolls back from backups."""
+    import os
+
+    from GenomicElementTools import annotation_publish
+
+    track_path = _build_track(tmp_path, _default_track())
+    coord_out = tmp_path / "coord.npy"
+    mask_out = tmp_path / "mask.npy"
+    prior_coords = np.asarray([[7], [8], [9]], dtype=np.int64)
+    prior_mask = np.asarray([[True], [False], [True]], dtype=bool)
+    np.save(coord_out, prior_coords)
+    np.save(mask_out, prior_mask)
+    prior_coord_bytes = coord_out.read_bytes()
+    prior_mask_bytes = mask_out.read_bytes()
+
+    real_replace = os.replace
+    state = {"failed_once": False}
+
+    def flaky_replace(src, dst):
+        src_path = Path(src)
+        dst_path = Path(dst)
+        # Fail only the first publish of the mask destination (staging → final).
+        if (
+            not state["failed_once"]
+            and dst_path == mask_out
+            and ".staging" in src_path.name
+        ):
+            state["failed_once"] = True
+            raise OSError("induced commit failure on mask destination")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(annotation_publish.os, "replace", flaky_replace, raising=True)
+
+    with pytest.raises(OSError, match="induced commit failure"):
+        _run_cli(
+            _base_argv(
+                TINY_TREBED,
+                track_path,
+                coord_out,
+                mask_out,
+                target_coord=1,
+                min_score=1.5,
+                force=True,
+            )
+        )
+
+    assert coord_out.read_bytes() == prior_coord_bytes
+    assert mask_out.read_bytes() == prior_mask_bytes
+    assert not (tmp_path / f".{coord_out.stem}.staging{coord_out.suffix}").exists()
+    assert not (tmp_path / f".{mask_out.stem}.staging{mask_out.suffix}").exists()
+    assert not (tmp_path / f".{coord_out.name}.bak").exists()
+    assert not (tmp_path / f".{mask_out.name}.bak").exists()
+
+    monkeypatch.setattr(annotation_publish.os, "replace", real_replace, raising=True)
+    _run_cli(
+        _base_argv(
+            TINY_TREBED,
+            track_path,
+            coord_out,
+            mask_out,
+            target_coord=1,
+            min_score=1.5,
+            force=True,
+        )
+    )
+    assert np.array_equal(np.load(coord_out).ravel(), [1, 0, 0])
+    assert np.array_equal(np.load(mask_out).ravel(), [True, False, False])
+
+
+def test_compose_selection_with_mask_op_and_masked_export(tmp_path: Path):
+    """Selection mask + mask_op + MaskedGE keep coordinate annotations aligned."""
+    track_path = _build_track(tmp_path, _default_track())
+    coord_out = tmp_path / "coord.npy"
+    mask_out = tmp_path / "mask.npy"
+
+    _run_cli(
+        _base_argv(
+            TINY_TREBED,
+            track_path,
+            coord_out,
+            mask_out,
+            target_coord=1,
+            min_score=0.0,
+        )
+    )
+    # Selection with min_score 0 matches rows 0 and 2 (row1 missing fwdTSS).
+    assert np.array_equal(np.load(mask_out).ravel(), [True, False, True])
+    assert np.array_equal(np.load(coord_out).ravel(), [1, 0, 1])
+
+    extra_mask = tmp_path / "extra.npy"
+    np.save(extra_mask, np.asarray([[True], [True], [False]], dtype=bool))
+    combined_mask = tmp_path / "combined.npy"
+    _run_cli(
+        [
+            "mask_op",
+            "intersect",
+            "--region_file_path",
+            str(TINY_TREBED),
+            "--region_file_type",
+            "TREbed",
+            "--mask_npy",
+            str(mask_out),
+            "--mask_npy",
+            str(extra_mask),
+            "--opath",
+            str(combined_mask),
+        ]
+    )
+    assert np.array_equal(np.load(combined_mask).ravel(), [True, False, False])
+
+    out_bed = tmp_path / "masked.trebed"
+    anno_header = tmp_path / "masked_anno"
+    _run_cli(
+        [
+            "export",
+            "MaskedGE",
+            "--region_file_path",
+            str(TINY_TREBED),
+            "--region_file_type",
+            "TREbed",
+            "--mask_npy",
+            str(combined_mask),
+            "--opath",
+            str(out_bed),
+            "--anno_name",
+            "tss_rel_coord",
+            "--anno_npy",
+            str(coord_out),
+            "--anno_type",
+            "stat",
+            "--anno_oheader",
+            str(anno_header),
+        ]
+    )
+
+    lines = [ln for ln in out_bed.read_text().splitlines() if ln.strip()]
+    assert lines == ["chr1\t100\t110\tr1\t105\t-1"]
+    filtered_coords = np.load(f"{anno_header}.tss_rel_coord.npy")
+    assert filtered_coords.shape == (1, 1)
+    assert filtered_coords.ravel()[0] == 1
+
+
+def test_upstream_compat_inclusive_first_max_no_zero_minus_padding(tmp_path: Path):
+    """Synthetic compatibility bundle for upstream valid-input behaviors.
+
+    Documents inclusive cutoff, first-maximum ties, no-zero window crossing, and
+    minus-strand motif padding using existing fixtures (legacy upstream checkout
+    was not available in-tree for direct adaptation).
+    """
+    track = np.zeros((3, 20), dtype=float)
+    # Inclusive equality at scores of 5.0; first max among equals prefers earlier
+    # no-zero window coordinate (-2 before -1/+1) for target=-1, r=1.
+    track[0, 3] = 5.0  # coord -2
+    track[0, 4] = 5.0  # coord -1
+    track[0, 5] = 5.0  # coord +1
+    track_path = _build_track(tmp_path, track)
+
+    _run_cli(
+        _base_argv(
+            TINY_TREBED,
+            track_path,
+            tmp_path / "coord_plus.npy",
+            tmp_path / "mask_plus.npy",
+            target_coord=-1,
+            relaxation=1,
+            min_score=5.0,
+        )
+    )
+    assert np.load(tmp_path / "coord_plus.npy").ravel()[0] == -2
+    assert bool(np.load(tmp_path / "mask_plus.npy").ravel()[0])
+
+    motif_dir = tmp_path / "motif_case"
+    motif_dir.mkdir()
+    motif_path = motif_dir / "track.npy"
+    motif_track = np.zeros((1, 20), dtype=float)
+    motif_track[0, 8] = 7.5  # minus W=3, coord=+1 → index 8
+    np.save(motif_path, motif_track)
+    _run_cli(
+        _base_argv(
+            MOTIF_TREBED,
+            motif_path,
+            motif_dir / "coord.npy",
+            motif_dir / "mask.npy",
+            strand="-",
+            target_coord=1,
+            min_score=7.5,
+            track_window_size=3,
+        )
+    )
+    assert np.load(motif_dir / "coord.npy").ravel()[0] == 1
+    assert bool(np.load(motif_dir / "mask.npy").ravel()[0])
