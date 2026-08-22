@@ -512,3 +512,268 @@ def test_minus_strand_reverse_complements_iupac_target(tmp_path: Path):
     assert row["target_length"] == "3"
 
 
+# --- Ticket 04: preflight ---
+
+
+def test_coordinate_zero_rejected_before_output(tmp_path: Path):
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "coord.npy", [0])
+    _write_fasta(work / "targets.fa", [("t1", "AAA")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "rA",
+                "coordinate_stat": "coord.npy",
+                "target_fasta": "targets.fa",
+                "strand": "+",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match="zero"):
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=ONE_REGION,
+                manifest=manifest,
+                output_dir=out,
+            )
+        )
+    assert not out.exists()
+
+
+def test_missing_selected_tss_rejected(tmp_path: Path):
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "coord.npy", [1])
+    _write_fasta(work / "targets.fa", [("t1", "AAA")])
+    regions = tmp_path / "missing_tss.trebed"
+    regions.write_text("chr1\t100\t110\tr1\t-1\t105\n")
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "rA",
+                "coordinate_stat": "coord.npy",
+                "target_fasta": "targets.fa",
+                "strand": "+",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match="fwdTSS"):
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=regions,
+                manifest=manifest,
+                output_dir=out,
+            )
+        )
+    assert not out.exists()
+
+
+def test_window_overflow_rejected(tmp_path: Path):
+    work = tmp_path / "work"
+    work.mkdir()
+    # +1 with length 6 from index 5 overflows end at 10
+    _write_coord(work / "coord.npy", [1])
+    _write_fasta(work / "targets.fa", [("t1", "AAAAAA")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "rA",
+                "coordinate_stat": "coord.npy",
+                "target_fasta": "targets.fa",
+                "strand": "+",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match="fit|bounds|window"):
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=ONE_REGION,
+                manifest=manifest,
+                output_dir=out,
+            )
+        )
+    assert not out.exists()
+
+
+def test_empty_manifest_rejected(tmp_path: Path):
+    work = tmp_path / "work"
+    work.mkdir()
+    manifest = work / "rounds.tsv"
+    manifest.write_text("round_id\tcoordinate_stat\ttarget_fasta\tstrand\n")
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match="at least one round"):
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=ONE_REGION,
+                manifest=manifest,
+                output_dir=out,
+            )
+        )
+    assert not out.exists()
+
+
+def test_unequal_same_round_target_lengths_rejected(tmp_path: Path):
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "coord.npy", [1])
+    _write_fasta(work / "targets.fa", [("tA", "AAA"), ("tB", "CC")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "rA",
+                "coordinate_stat": "coord.npy",
+                "target_fasta": "targets.fa",
+                "strand": "+",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match="equal length"):
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=ONE_REGION,
+                manifest=manifest,
+                output_dir=out,
+            )
+        )
+    assert not out.exists()
+
+
+def test_non_iupac_target_rejected(tmp_path: Path):
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "coord.npy", [1])
+    _write_fasta(work / "targets.fa", [("t1", "A.T")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "rA",
+                "coordinate_stat": "coord.npy",
+                "target_fasta": "targets.fa",
+                "strand": "+",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match="IUPAC"):
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=ONE_REGION,
+                manifest=manifest,
+                output_dir=out,
+            )
+        )
+    assert not out.exists()
+
+
+
+# --- Ticket 04 (continued): placement / coverage preflight ---
+
+def test_float_integral_coordinates_are_not_coerced(tmp_path: Path):
+    """Float arrays are rejected even when values are integral."""
+    work = tmp_path / "work"
+    work.mkdir()
+    path = work / "coord.npy"
+    np.save(path, np.asarray([[1.0]], dtype=np.float64))
+    _write_fasta(work / "targets.fa", [("t1", "AAA")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "rA",
+                "coordinate_stat": "coord.npy",
+                "target_fasta": "targets.fa",
+                "strand": "+",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match="integer"):
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=ONE_REGION,
+                manifest=manifest,
+                output_dir=out,
+            )
+        )
+    assert not out.exists()
+
+
+def test_out_of_interval_selected_tss_rejected(tmp_path: Path):
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "coord.npy", [1])
+    _write_fasta(work / "targets.fa", [("t1", "AAA")])
+    regions = tmp_path / "bad_tss.trebed"
+    regions.write_text("chr1\t100\t110\tr1\t99\t105\n")  # fwdTSS outside
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "rA",
+                "coordinate_stat": "coord.npy",
+                "target_fasta": "targets.fa",
+                "strand": "+",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match="outside interval"):
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=regions,
+                manifest=manifest,
+                output_dir=out,
+            )
+        )
+    assert not out.exists()
+
+
+def test_missing_chromosome_rejected_before_output(tmp_path: Path):
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "coord.npy", [1])
+    _write_fasta(work / "targets.fa", [("t1", "AAA")])
+    regions = tmp_path / "missing_chrom.trebed"
+    regions.write_text("chrZ\t100\t110\tr1\t105\t105\n")
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "rA",
+                "coordinate_stat": "coord.npy",
+                "target_fasta": "targets.fa",
+                "strand": "+",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match="[Cc]hrom"):
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=regions,
+                manifest=manifest,
+                output_dir=out,
+            )
+        )
+    assert not out.exists()
+
+
