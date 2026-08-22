@@ -32,7 +32,8 @@ def offset_tss_relative_coordinate(coord: int, delta: int) -> int:
 def iter_relaxed_window(target: int, relaxation: int) -> Iterator[int]:
     """Yield ascending TSS-relative coordinates in a symmetric relaxed window.
 
-    Ticket 01 delivers only ``relaxation == 0`` (the exact target).
+    A nonnegative relaxation radius ``r`` yields exactly ``2r+1`` coordinates
+    while skipping zero via :func:`offset_tss_relative_coordinate`.
     """
     if target == 0:
         raise ValueError("TSS-relative coordinate zero is invalid.")
@@ -40,11 +41,8 @@ def iter_relaxed_window(target: int, relaxation: int) -> Iterator[int]:
         raise ValueError(
             f"relaxation must be a nonnegative integer, found {relaxation}."
         )
-    if relaxation != 0:
-        raise ValueError(
-            "Nonzero relaxation is not yet delivered in this release slice."
-        )
-    yield target
+    for delta in range(-relaxation, relaxation + 1):
+        yield offset_tss_relative_coordinate(target, delta)
 
 
 def tss_relative_to_track_index(
@@ -58,21 +56,19 @@ def tss_relative_to_track_index(
 ) -> int:
     """Convert a TSS-relative coordinate to a row-local genomic-forward track index.
 
-    Ticket 01 delivers exact plus-strand conversion with ``track_window_size == 1``.
+    Tracks are indexed in genomic-forward order. On ``+``, the reported coordinate
+    is the genomic-left strand-oriented 5-prime base of the scored window and the
+    index is ``genomic - start``. On ``-``, the reported coordinate is the
+    genomic-right strand-oriented 5-prime base and the index subtracts
+    ``track_window_size - 1``. Genomic position is ``tss + _to_linear(coord)``.
     """
-    if strand != "+":
+    if strand not in ("+", "-"):
         raise ValueError(
-            f"Strand {strand!r} conversion is not yet delivered in this release slice; "
-            "only '+' is supported."
+            f"strand must be '+' or '-', found {strand!r}."
         )
     if track_window_size < 1:
         raise ValueError(
             f"track_window_size must be a positive integer, found {track_window_size}."
-        )
-    if track_window_size != 1:
-        raise ValueError(
-            f"track_window_size={track_window_size} is not yet delivered in this "
-            "release slice; only track_window_size=1 is supported."
         )
     if coord == 0:
         raise ValueError("TSS-relative coordinate zero is invalid.")
@@ -82,9 +78,14 @@ def tss_relative_to_track_index(
         )
 
     genomic = tss + _to_linear(coord)
-    track_index = genomic - start
+    if strand == "+":
+        track_index = genomic - start
+    else:
+        track_index = genomic - start - (track_window_size - 1)
+
     length = end - start
-    if not (0 <= track_index < length):
+    # Scored window of width W starting at index i must fit in [start, end).
+    if not (0 <= track_index < length - (track_window_size - 1)):
         raise ValueError(
             f"Track index {track_index} is out of bounds for interval [{start}, {end}) "
             f"(strand={strand!r}, coord={coord}, tss={tss}, "

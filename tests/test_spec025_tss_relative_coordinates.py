@@ -1,4 +1,4 @@
-"""SPEC025 contract tests: RGTools.TSSRelativeCoordinates public API (ticket 01)."""
+"""SPEC025 contract tests: RGTools.TSSRelativeCoordinates public API."""
 
 from __future__ import annotations
 
@@ -66,43 +66,155 @@ def test_plus_strand_point_conversion_upstream_and_downstream():
     )  # 105 + 3 - 1 = 107 → index 7
 
 
-def test_plus_conversion_rejects_zero_coord():
+def test_minus_strand_point_conversion_at_tss():
+    """Minus-strand +1 maps to the genomic TSS base when window size is 1."""
+    assert (
+        tss_relative_to_track_index(
+            strand="-",
+            coord=1,
+            start=100,
+            end=110,
+            tss=105,
+            track_window_size=1,
+        )
+        == 5
+    )
+
+
+def test_minus_strand_point_conversion_upstream_and_downstream():
+    """Minus point indices use the same genomic mapping as plus when W=1."""
+    # genomic_right = tss + _to_linear(coord); index = genomic - start for W=1
+    assert (
+        tss_relative_to_track_index(
+            strand="-", coord=-2, start=100, end=110, tss=105, track_window_size=1
+        )
+        == 3
+    )
+    assert (
+        tss_relative_to_track_index(
+            strand="-", coord=3, start=100, end=110, tss=105, track_window_size=1
+        )
+        == 7
+    )
+
+
+def test_plus_motif_window_index_is_genomic_left():
+    """Plus track_window_size>1 indexes the genomic-left 5-prime base."""
+    # [100,120), tss=110, coord=+1, W=3 → genomic_left=110 → index 10
+    assert (
+        tss_relative_to_track_index(
+            strand="+",
+            coord=1,
+            start=100,
+            end=120,
+            tss=110,
+            track_window_size=3,
+        )
+        == 10
+    )
+
+
+def test_minus_motif_window_index_subtracts_padding():
+    """Minus track_window_size>1 indexes genomic-right 5-prime via W-1 padding."""
+    # [100,120), revTSS=110, coord=+1, W=3 → genomic_right=110 → index 8
+    assert (
+        tss_relative_to_track_index(
+            strand="-",
+            coord=1,
+            start=100,
+            end=120,
+            tss=110,
+            track_window_size=3,
+        )
+        == 8
+    )
+
+
+def test_edge_positions_plus_and_minus_with_window():
+    """Exact edge indices remain valid when the scored window fits."""
+    # Plus: genomic_left at start, W=2 → index 0; window [start, start+2)
+    assert (
+        tss_relative_to_track_index(
+            strand="+", coord=1, start=100, end=110, tss=100, track_window_size=2
+        )
+        == 0
+    )
+    # Minus: genomic_right at end-1, W=2 → index = (end-1)-start-(2-1) = length-2
+    assert (
+        tss_relative_to_track_index(
+            strand="-", coord=1, start=100, end=110, tss=109, track_window_size=2
+        )
+        == 8
+    )
+
+
+def test_conversion_rejects_zero_coord():
     with pytest.raises(ValueError, match="[Zz]ero"):
         tss_relative_to_track_index(
             strand="+", coord=0, start=100, end=110, tss=105, track_window_size=1
         )
 
 
-def test_plus_conversion_rejects_out_of_bounds_index():
+def test_conversion_rejects_out_of_bounds_index():
     with pytest.raises(ValueError, match="[Oo]ut|[Bb]ound|[Ii]ndex|[Ii]nterval"):
         tss_relative_to_track_index(
             strand="+", coord=1, start=100, end=110, tss=99, track_window_size=1
         )
 
 
-def test_plus_conversion_rejects_invalid_interval():
+def test_conversion_rejects_window_that_does_not_fit():
+    """A scored window that would extend past end is out of bounds."""
+    with pytest.raises(ValueError, match="[Oo]ut|[Bb]ound|[Ii]ndex|[Ii]nterval"):
+        # Plus W=3 at genomic_left=end-1 cannot fit
+        tss_relative_to_track_index(
+            strand="+", coord=1, start=100, end=110, tss=109, track_window_size=3
+        )
+
+
+def test_conversion_rejects_invalid_interval():
     with pytest.raises(ValueError, match="[Ii]nterval|[Ee]nd|[Ss]tart"):
         tss_relative_to_track_index(
             strand="+", coord=1, start=110, end=100, tss=105, track_window_size=1
         )
 
 
-def test_minus_strand_not_yet_delivered():
-    with pytest.raises(ValueError, match="[Nn]ot yet|[Uu]nsupported"):
+def test_conversion_rejects_invalid_strand():
+    with pytest.raises(ValueError, match="[Ss]trand"):
         tss_relative_to_track_index(
-            strand="-", coord=1, start=100, end=110, tss=105, track_window_size=1
+            strand="*", coord=1, start=100, end=110, tss=105, track_window_size=1
         )
 
 
-def test_track_window_size_gt_one_not_yet_delivered():
-    with pytest.raises(ValueError, match="[Nn]ot yet|[Uu]nsupported"):
+def test_conversion_rejects_nonpositive_window_size():
+    with pytest.raises(ValueError, match="track_window_size"):
         tss_relative_to_track_index(
-            strand="+", coord=1, start=100, end=110, tss=105, track_window_size=2
+            strand="+", coord=1, start=100, end=110, tss=105, track_window_size=0
         )
 
 
-def test_iter_relaxed_window_exact_only():
-    """Ticket 01 delivers relaxation=0; nonzero relaxation is rejected."""
-    assert list(iter_relaxed_window(3, 0)) == [3]
-    with pytest.raises(ValueError, match="[Nn]ot yet|[Uu]nsupported"):
-        list(iter_relaxed_window(3, 1))
+@pytest.mark.parametrize(
+    "target,relaxation,expected",
+    [
+        (3, 0, [3]),
+        (-1, 1, [-2, -1, 1]),
+        (1, 1, [-1, 1, 2]),
+        (-2, 2, [-4, -3, -2, -1, 1]),
+        (2, 2, [-1, 1, 2, 3, 4]),
+    ],
+)
+def test_iter_relaxed_window_cardinality_and_ascending_order(
+    target, relaxation, expected
+):
+    """Relaxation r yields exactly 2r+1 ascending no-zero coordinates."""
+    got = list(iter_relaxed_window(target, relaxation))
+    assert got == expected
+    assert len(got) == 2 * relaxation + 1
+    assert got == sorted(got)
+    assert 0 not in got
+
+
+def test_iter_relaxed_window_rejects_zero_target_and_negative_relaxation():
+    with pytest.raises(ValueError, match="[Zz]ero"):
+        list(iter_relaxed_window(0, 0))
+    with pytest.raises(ValueError, match="relaxation"):
+        list(iter_relaxed_window(1, -1))

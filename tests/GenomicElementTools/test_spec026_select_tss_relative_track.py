@@ -1,4 +1,4 @@
-"""SPEC026 contract tests: GenomicElementTools select_tss_relative_track (ticket 01)."""
+"""SPEC026 contract tests: GenomicElementTools select_tss_relative_track."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from RGTools.GenomicElements import GenomicElements
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "tss_relative"
 TINY_TREBED = FIXTURES / "tiny.trebed"
+MOTIF_TREBED = FIXTURES / "motif_window.trebed"
 TINY_BED3 = Path(__file__).resolve().parents[1] / "fixtures" / "get" / "tiny.bed3"
 
 
@@ -213,26 +214,182 @@ def test_rev_tss_irrelevant_for_plus_strand(tmp_path: Path):
     assert bool(mask[2])
 
 
-@pytest.mark.parametrize(
-    "kwargs,match",
-    [
-        ({"strand": "-"}, "[Nn]ot yet|[Uu]nsupported"),
-        ({"relaxation": 1}, "[Nn]ot yet|[Uu]nsupported"),
-        ({"track_window_size": 2}, "[Nn]ot yet|[Uu]nsupported"),
-    ],
-)
-def test_later_modes_rejected_explicitly(tmp_path: Path, kwargs, match):
-    track_path = _build_track(tmp_path, _default_track())
-    with pytest.raises(ValueError, match=match):
-        _run_cli(
-            _base_argv(
-                TINY_TREBED,
-                track_path,
-                tmp_path / "coord.npy",
-                tmp_path / "mask.npy",
-                **kwargs,
-            )
+def test_relaxed_window_selects_first_maximum(tmp_path: Path):
+    """Ascending window scan keeps the first coordinate among equal maxima."""
+    track = np.zeros((3, 20), dtype=float)
+    # Window around target=-1 with r=1 is [-2, -1, 1].
+    # Indices for row0 fwdTSS=105: -2→3, -1→4, +1→5
+    track[0, 3] = 5.0
+    track[0, 4] = 5.0  # equal max later → keep -2
+    track[0, 5] = 1.0
+    track_path = _build_track(tmp_path, track)
+    coord_out = tmp_path / "coord.npy"
+    mask_out = tmp_path / "mask.npy"
+
+    _run_cli(
+        _base_argv(
+            TINY_TREBED,
+            track_path,
+            coord_out,
+            mask_out,
+            target_coord=-1,
+            relaxation=1,
+            min_score=5.0,
         )
+    )
+
+    coords = np.load(coord_out).ravel()
+    mask = np.load(mask_out).ravel()
+    assert coords[0] == -2
+    assert bool(mask[0])
+    assert coords[1] == 0 and not bool(mask[1])
+
+
+def test_relaxed_window_crosses_tss_skipping_zero(tmp_path: Path):
+    """Relaxed selection across the TSS uses no-zero window positions only."""
+    track = np.zeros((3, 20), dtype=float)
+    # target=1, r=1 → [-1, 1, 2]; indices 4, 5, 6 for fwdTSS=105
+    track[0, 4] = 1.0
+    track[0, 5] = 2.0
+    track[0, 6] = 3.0
+    track_path = _build_track(tmp_path, track)
+
+    _run_cli(
+        _base_argv(
+            TINY_TREBED,
+            track_path,
+            tmp_path / "coord.npy",
+            tmp_path / "mask.npy",
+            target_coord=1,
+            relaxation=1,
+            min_score=2.5,
+        )
+    )
+
+    assert np.load(tmp_path / "coord.npy").ravel()[0] == 2
+    assert bool(np.load(tmp_path / "mask.npy").ravel()[0])
+
+
+def test_inclusive_equality_on_selected_maximum(tmp_path: Path):
+    """Match when the selected maximum equals min_score exactly."""
+    track = np.zeros((3, 20), dtype=float)
+    track[0, 4] = 1.0
+    track[0, 5] = 2.0
+    track[0, 6] = 2.0
+    track_path = _build_track(tmp_path, track)
+
+    _run_cli(
+        _base_argv(
+            TINY_TREBED,
+            track_path,
+            tmp_path / "coord.npy",
+            tmp_path / "mask.npy",
+            target_coord=1,
+            relaxation=1,
+            min_score=2.0,
+        )
+    )
+
+    # First max among equals at indices for [-1,1,2] is coord +1 (score 2)
+    assert np.load(tmp_path / "coord.npy").ravel()[0] == 1
+    assert bool(np.load(tmp_path / "mask.npy").ravel()[0])
+
+
+def test_minus_strand_uses_rev_tss(tmp_path: Path):
+    """Strand '-' selects revTSS; missing revTSS is no-match; fwdTSS ignored."""
+    track = np.zeros((3, 20), dtype=float)
+    # Row1 revTSS=205 → +1 index 5; row0 revTSS=-1; row2 revTSS=315 → index 15
+    track[1, 5] = 4.0
+    track[0, 5] = 99.0  # fwdTSS-relative cell must not matter
+    track[2, 15] = 4.0
+    track_path = _build_track(tmp_path, track)
+
+    _run_cli(
+        _base_argv(
+            TINY_TREBED,
+            track_path,
+            tmp_path / "coord.npy",
+            tmp_path / "mask.npy",
+            strand="-",
+            target_coord=1,
+            min_score=4.0,
+        )
+    )
+
+    coords = np.load(tmp_path / "coord.npy").ravel()
+    mask = np.load(tmp_path / "mask.npy").ravel()
+    assert np.array_equal(coords, [0, 1, 1])
+    assert np.array_equal(mask, [False, True, True])
+
+
+def test_motif_minus_window_padding_semantics(tmp_path: Path):
+    """Minus motif window indexes genomic-right 5-prime with W-1 padding."""
+    # motif_window.trebed: [100,120) revTSS=110; W=3, coord=+1 → index 8
+    track = np.zeros((1, 20), dtype=float)
+    track[0, 8] = 7.5
+    track_path = _build_track(tmp_path, track)
+
+    _run_cli(
+        _base_argv(
+            MOTIF_TREBED,
+            track_path,
+            tmp_path / "coord.npy",
+            tmp_path / "mask.npy",
+            strand="-",
+            target_coord=1,
+            min_score=7.5,
+            track_window_size=3,
+        )
+    )
+
+    assert np.load(tmp_path / "coord.npy").ravel()[0] == 1
+    assert bool(np.load(tmp_path / "mask.npy").ravel()[0])
+
+
+def test_motif_plus_window_uses_genomic_left_index(tmp_path: Path):
+    """Plus motif window indexes the genomic-left 5-prime without padding shift."""
+    track = np.zeros((1, 20), dtype=float)
+    # fwdTSS=110, coord=+1, W=3 → index 10
+    track[0, 10] = 3.0
+    track_path = _build_track(tmp_path, track)
+
+    _run_cli(
+        _base_argv(
+            MOTIF_TREBED,
+            track_path,
+            tmp_path / "coord.npy",
+            tmp_path / "mask.npy",
+            strand="+",
+            target_coord=1,
+            min_score=3.0,
+            track_window_size=3,
+        )
+    )
+
+    assert np.load(tmp_path / "coord.npy").ravel()[0] == 1
+    assert bool(np.load(tmp_path / "mask.npy").ravel()[0])
+
+
+def test_row_order_preserved_with_mixed_matches(tmp_path: Path):
+    """Output rows stay aligned to input TREbed order under mixed outcomes."""
+    track = np.zeros((3, 20), dtype=float)
+    track[0, 5] = 1.0
+    track[2, 10] = 1.0
+    track_path = _build_track(tmp_path, track)
+
+    _run_cli(
+        _base_argv(
+            TINY_TREBED,
+            track_path,
+            tmp_path / "coord.npy",
+            tmp_path / "mask.npy",
+            target_coord=1,
+            min_score=1.0,
+        )
+    )
+
+    assert np.array_equal(np.load(tmp_path / "coord.npy").ravel(), [1, 0, 1])
+    assert np.array_equal(np.load(tmp_path / "mask.npy").ravel(), [True, False, True])
 
 
 def test_non_trebed_region_type_rejected(tmp_path: Path):
@@ -260,5 +417,19 @@ def test_nonfinite_min_score_rejected(tmp_path: Path):
                 tmp_path / "coord.npy",
                 tmp_path / "mask.npy",
                 min_score=float("nan"),
+            )
+        )
+
+
+def test_boolean_track_rejected(tmp_path: Path):
+    track = np.zeros((3, 20), dtype=bool)
+    track_path = _build_track(tmp_path, track)
+    with pytest.raises(ValueError, match="[Bb]oolean|[Nn]umeric"):
+        _run_cli(
+            _base_argv(
+                TINY_TREBED,
+                track_path,
+                tmp_path / "coord.npy",
+                tmp_path / "mask.npy",
             )
         )

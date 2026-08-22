@@ -7,7 +7,10 @@ import math
 import numpy as np
 
 from RGTools.GenomicElements import GenomicElements
-from RGTools.TSSRelativeCoordinates import tss_relative_to_track_index
+from RGTools.TSSRelativeCoordinates import (
+    iter_relaxed_window,
+    tss_relative_to_track_index,
+)
 
 
 class SelectTssRelativeTrack:
@@ -72,29 +75,18 @@ class SelectTssRelativeTrack:
                 f"select_tss_relative_track requires region_file_type 'TREbed'; "
                 f"got {args.region_file_type!r}."
             )
-        if args.strand != "+":
+        if args.strand not in ("+", "-"):
             raise ValueError(
-                f"Strand {args.strand!r} selection is not yet delivered in this "
-                "release slice; only '+' is supported."
+                f"strand must be '+' or '-', found {args.strand!r}."
             )
         if args.relaxation < 0:
             raise ValueError(
                 f"relaxation must be a nonnegative integer, found {args.relaxation}."
             )
-        if args.relaxation != 0:
-            raise ValueError(
-                f"relaxation={args.relaxation} is not yet delivered in this "
-                "release slice; only relaxation=0 is supported."
-            )
         if args.track_window_size < 1:
             raise ValueError(
                 "track_window_size must be a positive integer, found "
                 f"{args.track_window_size}."
-            )
-        if args.track_window_size != 1:
-            raise ValueError(
-                f"track_window_size={args.track_window_size} is not yet delivered "
-                "in this release slice; only track_window_size=1 is supported."
             )
         if args.target_coord == 0:
             raise ValueError("TSS-relative target_coord zero is invalid.")
@@ -123,37 +115,46 @@ class SelectTssRelativeTrack:
 
         coords = np.zeros((n, 1), dtype=np.int64)
         mask = np.zeros((n, 1), dtype=bool)
+        tss_field = "fwdTSS" if args.strand == "+" else "revTSS"
+        window_coords = list(iter_relaxed_window(args.target_coord, args.relaxation))
 
         for i, region in enumerate(bed.iter_regions()):
             start = int(region["start"])
             end = int(region["end"])
-            fwd_tss = int(region["fwdTSS"])
+            selected_tss = int(region[tss_field])
 
-            if fwd_tss == -1:
+            if selected_tss == -1:
                 continue
 
-            if not (start <= fwd_tss < end):
+            if not (start <= selected_tss < end):
                 raise ValueError(
-                    f"Selected fwdTSS={fwd_tss} is outside interval [{start}, {end}) "
-                    f"for row {i}."
+                    f"Selected {tss_field}={selected_tss} is outside interval "
+                    f"[{start}, {end}) for row {i}."
                 )
 
-            index = tss_relative_to_track_index(
-                strand="+",
-                coord=args.target_coord,
-                start=start,
-                end=end,
-                tss=fwd_tss,
-                track_window_size=1,
-            )
-            score = ge.get_region_track_by_index("track", i)[index]
-            score_f = float(score)
-            if math.isnan(score_f):
-                raise ValueError(
-                    f"NaN score at row {i}, track index {index}."
+            track_row = ge.get_region_track_by_index("track", i)
+            best_coord = None
+            best_score = None
+            for coord in window_coords:
+                index = tss_relative_to_track_index(
+                    strand=args.strand,
+                    coord=coord,
+                    start=start,
+                    end=end,
+                    tss=selected_tss,
+                    track_window_size=args.track_window_size,
                 )
-            if score_f >= args.min_score:
-                coords[i, 0] = int(args.target_coord)
+                score_f = float(track_row[index])
+                if math.isnan(score_f):
+                    raise ValueError(
+                        f"NaN score at row {i}, track index {index}."
+                    )
+                if best_score is None or score_f > best_score:
+                    best_score = score_f
+                    best_coord = coord
+
+            if best_score is not None and best_score >= args.min_score:
+                coords[i, 0] = int(best_coord)
                 mask[i, 0] = True
 
         ge.load_region_stat_from_arr("tss_rel_coord", coords)
