@@ -409,3 +409,106 @@ def test_target_id_with_reserved_delimiter_rejected(tmp_path: Path):
     assert not out.exists()
 
 
+# --- Ticket 03: sequential rounds / strand / replaced windows ---
+
+
+def test_later_round_joins_by_target_id_despite_reorder(tmp_path: Path):
+    """Later rounds join by target ID even when FASTA order differs."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "c1.npy", [1])
+    _write_coord(work / "c2.npy", [-1])
+    _write_fasta(work / "t1.fa", [("tA", "AAA"), ("tB", "CCC")])
+    # Reordered and different length for round 2
+    _write_fasta(work / "t2.fa", [("tB", "GG"), ("tA", "TT")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "first",
+                "coordinate_stat": "c1.npy",
+                "target_fasta": "t1.fa",
+                "strand": "+",
+            },
+            {
+                "round_id": "second",
+                "coordinate_stat": "c2.npy",
+                "target_fasta": "t2.fa",
+                "strand": "+",
+            },
+        ],
+    )
+    out = tmp_path / "out"
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=ONE_REGION,
+            manifest=manifest,
+            output_dir=out,
+            write_replaced_windows=True,
+        )
+    )
+    records = _read_fasta(out / "sequences.fasta")
+    assert [rid for rid, _ in records] == [
+        "r000001|chr1:100-110|target=tA",
+        "r000001|chr1:100-110|target=tB",
+    ]
+    # Round1 +1 len3 @idx5; round2 -1 len2:
+    # genomic = tss + (-1) = 104; index = 104-100 = 4 for plus window size 2
+    # After round1 tA: ACGTAAAAAC; replace idx4:6 (AA) with TT → ACGTTTAAAC
+    # After round1 tB: ACGTACCCAC; replace idx4:6 (AC) with GG → ACGTGGCCAC
+    assert records[0][1] == "ACGTTTAAAC"
+    assert records[1][1] == "ACGTGGCCAC"
+
+    rows = _read_manifest(out / "manifest.tsv")
+    assert len(rows) == 4  # N*M*R = 1*2*2
+    assert [row["round_id"] for row in rows] == [
+        "first",
+        "second",
+        "first",
+        "second",
+    ]
+
+    replaced_first = _read_fasta(out / "replaced" / "first.fasta")
+    replaced_second = _read_fasta(out / "replaced" / "second.fasta")
+    assert [rid for rid, _ in replaced_first] == [rid for rid, _ in records]
+    assert [seq for _, seq in replaced_first] == ["CGT", "CGT"]
+    # Second round replaced windows include first-round bases where they overlap
+    assert [seq for _, seq in replaced_second] == ["AA", "AC"]
+    assert all(len(seq) == 2 for _, seq in replaced_second)
+
+
+def test_minus_strand_reverse_complements_iupac_target(tmp_path: Path):
+    """Minus rounds use revTSS and reverse-complement IUPAC targets."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "coord.npy", [1])
+    _write_fasta(work / "targets.fa", [("t1", "ATy")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "minus1",
+                "coordinate_stat": "coord.npy",
+                "target_fasta": "targets.fa",
+                "strand": "-",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=ONE_REGION,
+            manifest=manifest,
+            output_dir=out,
+        )
+    )
+    _, seq = _read_fasta(out / "sequences.fasta")[0]
+    # RC(ATy)=rAT; minus +1 len3 → index = 105-100-(3-1)=3; replace TAC with rAT
+    assert seq == "ACGrATGTAC"
+    row = _read_manifest(out / "manifest.tsv")[0]
+    assert row["strand"] == "-"
+    assert row["target_length"] == "3"
+
+
