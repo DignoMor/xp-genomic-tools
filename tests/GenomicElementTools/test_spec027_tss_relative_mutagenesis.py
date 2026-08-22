@@ -777,3 +777,130 @@ def test_missing_chromosome_rejected_before_output(tmp_path: Path):
     assert not out.exists()
 
 
+# --- Ticket 05: forced replacement / remnants ---
+
+
+def test_force_replaces_existing_bundle(tmp_path: Path):
+    """--force stages a complete replacement and swaps the output directory."""
+    manifest, out = _one_round_plus_setup(tmp_path)
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=ONE_REGION,
+            manifest=manifest,
+            output_dir=out,
+        )
+    )
+    first = _read_fasta(out / "sequences.fasta")[0][1]
+
+    work = tmp_path / "work"
+    _write_fasta(work / "targets.fa", [("t1", "CCC")])
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=ONE_REGION,
+            manifest=manifest,
+            output_dir=out,
+            force=True,
+        )
+    )
+    second = _read_fasta(out / "sequences.fasta")[0][1]
+    assert first == "ACGTAAAAAC"
+    assert second == "ACGTACCCAC"
+    assert not list(out.parent.glob(f".{out.name}.bak*"))
+    assert not list(out.parent.glob(f".{out.name}.staging*"))
+
+
+def test_interrupted_backup_remnant_blocks_rerun(tmp_path: Path):
+    """Detected backup/staging remnants block rerun without destructive cleanup."""
+    manifest, out = _one_round_plus_setup(tmp_path)
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=ONE_REGION,
+            manifest=manifest,
+            output_dir=out,
+        )
+    )
+    remnant = out.parent / f".{out.name}.bak"
+    remnant.mkdir()
+    (remnant / "old.txt").write_text("recover-me")
+    with pytest.raises(OSError, match="Interrupted|remnant"):
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=ONE_REGION,
+                manifest=manifest,
+                output_dir=out,
+                force=True,
+            )
+        )
+    assert (remnant / "old.txt").read_text() == "recover-me"
+    assert (out / "sequences.fasta").exists()
+
+
+def test_force_does_not_remove_unrelated_sibling(tmp_path: Path):
+    manifest, out = _one_round_plus_setup(tmp_path)
+    sibling = tmp_path / "unrelated"
+    sibling.mkdir()
+    (sibling / "keep.txt").write_text("safe")
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=ONE_REGION,
+            manifest=manifest,
+            output_dir=out,
+        )
+    )
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=ONE_REGION,
+            manifest=manifest,
+            output_dir=out,
+            force=True,
+        )
+    )
+    assert (sibling / "keep.txt").read_text() == "safe"
+
+
+def test_force_publication_rollback_preserves_previous_bundle(tmp_path: Path, monkeypatch):
+    """Ordinary failure during publication restores the previous bundle."""
+    manifest, out = _one_round_plus_setup(tmp_path)
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=ONE_REGION,
+            manifest=manifest,
+            output_dir=out,
+        )
+    )
+    original = (out / "sequences.fasta").read_text()
+    work = tmp_path / "work"
+    _write_fasta(work / "targets.fa", [("t1", "CCC")])
+
+    import GenomicElementTools.tss_relative_mutagenesis as mut
+
+    real_replace = mut.os.replace
+
+    def flaky_replace(src, dst):
+        src_path = Path(src)
+        dst_path = Path(dst)
+        # Fail when promoting a staging directory onto the destination.
+        if src_path.name.startswith(f".{out.name}.staging.") and dst_path == out:
+            raise OSError("induced publication failure")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(mut.os, "replace", flaky_replace)
+    with pytest.raises(OSError, match="induced publication failure"):
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=ONE_REGION,
+                manifest=manifest,
+                output_dir=out,
+                force=True,
+            )
+        )
+    assert (out / "sequences.fasta").read_text() == original
+    assert not list(out.parent.glob(f".{out.name}.staging*"))
