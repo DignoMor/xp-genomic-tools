@@ -21,8 +21,8 @@ EXPECTED_SUBCOMMANDS = {
     "import",
     "get_context_ge",
     "mask_op",
+    "select_tss_relative_track",
 }
-
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="GenomicElementTools")

@@ -13,6 +13,7 @@ from .export import GenomicElementExport
 from .GenomicElementImport import GenomicElementImport
 from .get_context_ge import GetContextGe
 from .mask_op import MaskOp
+from .select_tss_relative_track import SelectTssRelativeTrack
 
 
 class GenomicElementTools:
@@ -94,6 +95,13 @@ class GenomicElementTools:
 
         MaskOp.set_parser(parser_mask_op)
 
+        parser_select_tss_relative_track = subparsers.add_parser(
+            "select_tss_relative_track",
+            help="Select a TSS-relative track score and emit coordinate/mask annotations.",
+        )
+
+        SelectTssRelativeTrack.set_parser(parser_select_tss_relative_track)
+
     @staticmethod
     def main(args):
         if args.subcommand == "count_single_bw":
@@ -120,6 +128,8 @@ class GenomicElementTools:
             GetContextGe.main(args)
         elif args.subcommand == "mask_op":
             MaskOp.main(args)
+        elif args.subcommand == "select_tss_relative_track":
+            SelectTssRelativeTrack.main(args)
         else:
             raise ValueError("Unknown subcommand: {}".format(args.subcommand))
 
