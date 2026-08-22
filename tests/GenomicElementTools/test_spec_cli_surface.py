@@ -22,6 +22,7 @@ EXPECTED_SUBCOMMANDS = {
     "get_context_ge",
     "mask_op",
     "select_tss_relative_track",
+    "tss_relative_mutagenesis",
 }
 
 def _build_parser() -> argparse.ArgumentParser:

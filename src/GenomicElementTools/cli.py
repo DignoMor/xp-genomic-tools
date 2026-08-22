@@ -14,6 +14,7 @@ from .GenomicElementImport import GenomicElementImport
 from .get_context_ge import GetContextGe
 from .mask_op import MaskOp
 from .select_tss_relative_track import SelectTssRelativeTrack
+from .tss_relative_mutagenesis import TssRelativeMutagenesis
 
 
 class GenomicElementTools:
@@ -102,6 +103,13 @@ class GenomicElementTools:
 
         SelectTssRelativeTrack.set_parser(parser_select_tss_relative_track)
 
+        parser_tss_relative_mutagenesis = subparsers.add_parser(
+            "tss_relative_mutagenesis",
+            help="Apply TSS-relative mutation rounds to TREbed genomic elements.",
+        )
+
+        TssRelativeMutagenesis.set_parser(parser_tss_relative_mutagenesis)
+
     @staticmethod
     def main(args):
         if args.subcommand == "count_single_bw":
@@ -130,6 +138,8 @@ class GenomicElementTools:
             MaskOp.main(args)
         elif args.subcommand == "select_tss_relative_track":
             SelectTssRelativeTrack.main(args)
+        elif args.subcommand == "tss_relative_mutagenesis":
+            TssRelativeMutagenesis.main(args)
         else:
             raise ValueError("Unknown subcommand: {}".format(args.subcommand))
 
