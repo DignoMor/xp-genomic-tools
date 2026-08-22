@@ -290,3 +290,122 @@ def test_existing_output_dir_rejected_without_force(tmp_path: Path):
     assert not (out / "sequences.fasta").exists()
 
 
+# --- Ticket 02: mutation target groups ---
+
+
+def test_multiple_targets_expand_region_major(tmp_path: Path):
+    """N regions × M targets yield N*M finals in region-major then target order."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "coord.npy", [1, 1])
+    _write_fasta(work / "targets.fa", [("tA", "AAA"), ("tB", "CCC")])
+    regions = tmp_path / "two.trebed"
+    regions.write_text(
+        "chr1\t100\t110\tr1\t105\t105\n"
+        "chr1\t200\t210\tr2\t205\t205\n"
+    )
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "rA",
+                "coordinate_stat": "coord.npy",
+                "target_fasta": "targets.fa",
+                "strand": "+",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=regions,
+            manifest=manifest,
+            output_dir=out,
+        )
+    )
+    records = _read_fasta(out / "sequences.fasta")
+    assert [rid for rid, _ in records] == [
+        "r000001|chr1:100-110|target=tA",
+        "r000001|chr1:100-110|target=tB",
+        "r000002|chr1:200-210|target=tA",
+        "r000002|chr1:200-210|target=tB",
+    ]
+    assert [seq for _, seq in records] == [
+        "ACGTAAAAAC",
+        "ACGTACCCAC",
+        "ACGTAAAAAC",
+        "ACGTACCCAC",
+    ]
+    rows = _read_manifest(out / "manifest.tsv")
+    assert len(rows) == 4
+    assert [row["region_row"] for row in rows] == ["1", "1", "2", "2"]
+    assert [row["target_id"] for row in rows] == ["tA", "tB", "tA", "tB"]
+    assert [row["round_index"] for row in rows] == ["1", "1", "1", "1"]
+
+
+def test_duplicate_intervals_remain_unique_by_row(tmp_path: Path):
+    """Duplicate genomic intervals stay unique via one-based region_row."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "coord.npy", [1, 1])
+    _write_fasta(work / "targets.fa", [("t1", "GGG")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "rA",
+                "coordinate_stat": "coord.npy",
+                "target_fasta": "targets.fa",
+                "strand": "+",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=DUP_INTERVALS,
+            manifest=manifest,
+            output_dir=out,
+        )
+    )
+    ids = [rid for rid, _ in _read_fasta(out / "sequences.fasta")]
+    assert ids == [
+        "r000001|chr1:100-110|target=t1",
+        "r000002|chr1:100-110|target=t1",
+    ]
+    rows = _read_manifest(out / "manifest.tsv")
+    assert [row["region_name"] for row in rows] == ["a", "b"]
+
+
+def test_target_id_with_reserved_delimiter_rejected(tmp_path: Path):
+    """Target IDs containing '|' are rejected before output."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "coord.npy", [1])
+    _write_fasta(work / "targets.fa", [("bad|id", "AAA")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "rA",
+                "coordinate_stat": "coord.npy",
+                "target_fasta": "targets.fa",
+                "strand": "+",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match="delimiter"):
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=ONE_REGION,
+                manifest=manifest,
+                output_dir=out,
+            )
+        )
+    assert not out.exists()
+
+
