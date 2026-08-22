@@ -21,8 +21,8 @@ EXPECTED_SUBCOMMANDS = {
     "import",
     "get_context_ge",
     "mask_op",
+    "select_tss_relative_track",
 }
-
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="GenomicElementTools")
@@ -70,3 +70,30 @@ def test_shared_region_args_on_pad_region():
     }
     assert "--region_file_path" in option_strings
     assert "--region_file_type" in option_strings
+
+
+def test_select_tss_relative_track_exposes_force_and_defaults():
+    """select_tss_relative_track advertises --force and SPEC026 defaults."""
+    action = _subparsers_action(_build_parser())
+    parser = action.choices["select_tss_relative_track"]
+    by_dest = {a.dest: a for a in parser._actions}
+
+    assert "force" in by_dest
+    assert by_dest["force"].option_strings == ["--force"]
+    assert by_dest["relaxation"].default == 0
+    assert by_dest["track_window_size"].default == 1
+    assert by_dest["strand"].choices == ["+", "-"]
+    option_strings = {
+        flag for a in parser._actions for flag in a.option_strings
+    }
+    assert {
+        "--track_npy",
+        "--strand",
+        "--target_coord",
+        "--relaxation",
+        "--min_score",
+        "--track_window_size",
+        "--coordinate_opath",
+        "--mask_opath",
+        "--force",
+    }.issubset(option_strings)

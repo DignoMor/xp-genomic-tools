@@ -39,7 +39,8 @@ python -m GenomicElementTools --help
 
 Subcommands include `count_single_bw`, `count_paired_bw`, `pad_region`,
 `bed2tssbed`, `onehot`, `motif_search`, `track2tss_bed`, `filter_motif_score`,
-`export`, `import`, `get_context_ge`, and `mask_op`.
+`export`, `import`, `get_context_ge`, `mask_op`, and
+`select_tss_relative_track`.
 
 ### ExogeneousSequenceTools
 
