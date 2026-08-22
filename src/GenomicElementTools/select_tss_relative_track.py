@@ -136,15 +136,29 @@ class SelectTssRelativeTrack:
             best_coord = None
             best_score = None
             for coord in window_coords:
-                index = tss_relative_to_track_index(
-                    strand=args.strand,
-                    coord=coord,
-                    start=start,
-                    end=end,
-                    tss=selected_tss,
-                    track_window_size=args.track_window_size,
-                )
-                score_f = float(track_row[index])
+                try:
+                    index = tss_relative_to_track_index(
+                        strand=args.strand,
+                        coord=coord,
+                        start=start,
+                        end=end,
+                        tss=selected_tss,
+                        track_window_size=args.track_window_size,
+                    )
+                except ValueError as exc:
+                    raise ValueError(
+                        "Unavailable scored window for "
+                        f"row {i}, coord={coord}, interval [{start}, {end}), "
+                        f"tss={selected_tss}, strand={args.strand!r}, "
+                        f"track_window_size={args.track_window_size}."
+                    ) from exc
+                try:
+                    score_f = float(track_row[index])
+                except (IndexError, TypeError) as exc:
+                    raise ValueError(
+                        "Unavailable track value for "
+                        f"row {i}, coord={coord}, track index {index}."
+                    ) from exc
                 if math.isnan(score_f):
                     raise ValueError(
                         f"NaN score at row {i}, track index {index}."
@@ -157,6 +171,7 @@ class SelectTssRelativeTrack:
                 coords[i, 0] = int(best_coord)
                 mask[i, 0] = True
 
+        # Publish only after every row is fully validated and scored.
         ge.load_region_stat_from_arr("tss_rel_coord", coords)
         ge.load_mask_from_arr("tss_rel_mask", mask)
         ge.save_anno_npy("tss_rel_coord", args.coordinate_opath)

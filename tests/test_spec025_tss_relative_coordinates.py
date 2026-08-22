@@ -218,3 +218,27 @@ def test_iter_relaxed_window_rejects_zero_target_and_negative_relaxation():
         list(iter_relaxed_window(0, 0))
     with pytest.raises(ValueError, match="relaxation"):
         list(iter_relaxed_window(1, -1))
+
+
+def test_conversion_rejects_both_interval_edge_overflows():
+    """Indices before start and past the last fitting window are out of bounds."""
+    with pytest.raises(ValueError, match="[Oo]ut|[Bb]ound|[Ii]ndex|[Ii]nterval"):
+        tss_relative_to_track_index(
+            strand="+", coord=1, start=100, end=110, tss=99, track_window_size=1
+        )
+    with pytest.raises(ValueError, match="[Oo]ut|[Bb]ound|[Ii]ndex|[Ii]nterval"):
+        tss_relative_to_track_index(
+            strand="+", coord=1, start=100, end=110, tss=110, track_window_size=1
+        )
+
+
+def test_plus_and_minus_short_region_out_of_bounds():
+    """Short regions reject coordinates whose scored windows cannot fit."""
+    with pytest.raises(ValueError, match="[Oo]ut|[Bb]ound|[Ii]ndex|[Ii]nterval"):
+        tss_relative_to_track_index(
+            strand="+", coord=5, start=100, end=103, tss=101, track_window_size=1
+        )
+    with pytest.raises(ValueError, match="[Oo]ut|[Bb]ound|[Ii]ndex|[Ii]nterval"):
+        tss_relative_to_track_index(
+            strand="-", coord=5, start=100, end=103, tss=101, track_window_size=1
+        )
