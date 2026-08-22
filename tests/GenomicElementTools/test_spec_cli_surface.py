@@ -98,3 +98,26 @@ def test_select_tss_relative_track_exposes_force_and_defaults():
         "--mask_opath",
         "--force",
     }.issubset(option_strings)
+
+
+def test_tss_relative_mutagenesis_exposes_bundle_flags():
+    """tss_relative_mutagenesis advertises SPEC027 bundle and force flags."""
+    action = _subparsers_action(_build_parser())
+    parser = action.choices["tss_relative_mutagenesis"]
+    by_dest = {a.dest: a for a in parser._actions}
+    assert by_dest["write_replaced_windows"].option_strings == [
+        "--write_replaced_windows"
+    ]
+    assert by_dest["force"].option_strings == ["--force"]
+    option_strings = {
+        flag for a in parser._actions for flag in a.option_strings
+    }
+    assert {
+        "--fasta_path",
+        "--region_file_path",
+        "--region_file_type",
+        "--round_manifest",
+        "--output_dir",
+        "--write_replaced_windows",
+        "--force",
+    }.issubset(option_strings)

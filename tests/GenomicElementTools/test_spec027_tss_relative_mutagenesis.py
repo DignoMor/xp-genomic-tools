@@ -904,3 +904,113 @@ def test_force_publication_rollback_preserves_previous_bundle(tmp_path: Path, mo
         )
     assert (out / "sequences.fasta").read_text() == original
     assert not list(out.parent.glob(f".{out.name}.staging*"))
+def test_end_to_end_selection_mask_export_mutagenesis(tmp_path: Path):
+    """Select → mask_op → MaskedGE → multi-round tss_relative_mutagenesis."""
+    # Use plus-capable regions (all fwdTSS set) and a track that matches row0 only.
+    regions = tmp_path / "plus.trebed"
+    regions.write_text(
+        "chr1\t100\t110\tr1\t105\t105\n"
+        "chr1\t200\t210\tr2\t205\t205\n"
+    )
+    track = np.zeros((2, 10), dtype=float)
+    track[0, 5] = 2.0  # +1 at fwdTSS
+    track[1, 5] = 0.1
+    track_path = tmp_path / "track.npy"
+    np.save(track_path, track)
+
+    coord_out = tmp_path / "coord.npy"
+    mask_out = tmp_path / "mask.npy"
+    _run_cli(
+        [
+            "select_tss_relative_track",
+            "--region_file_path",
+            str(regions),
+            "--region_file_type",
+            "TREbed",
+            "--track_npy",
+            str(track_path),
+            "--strand",
+            "+",
+            "--target_coord",
+            "1",
+            "--min_score=1.0",
+            "--coordinate_opath",
+            str(coord_out),
+            "--mask_opath",
+            str(mask_out),
+        ]
+    )
+    assert np.array_equal(np.load(mask_out).ravel(), [True, False])
+
+    filtered_bed = tmp_path / "filtered.trebed"
+    anno_header = tmp_path / "filtered_anno"
+    _run_cli(
+        [
+            "export",
+            "MaskedGE",
+            "--region_file_path",
+            str(regions),
+            "--region_file_type",
+            "TREbed",
+            "--mask_npy",
+            str(mask_out),
+            "--opath",
+            str(filtered_bed),
+            "--anno_name",
+            "tss_rel_coord",
+            "--anno_npy",
+            str(coord_out),
+            "--anno_type",
+            "stat",
+            "--anno_oheader",
+            str(anno_header),
+        ]
+    )
+    filtered_coord = Path(f"{anno_header}.tss_rel_coord.npy")
+    assert filtered_bed.read_text().strip() == "chr1\t100\t110\tr1\t105\t105"
+    assert np.load(filtered_coord).ravel().tolist() == [1]
+
+    work = tmp_path / "mut"
+    work.mkdir()
+    shutil.copy(filtered_coord, work / "c1.npy")
+    _write_coord(work / "c2.npy", [-1])
+    _write_fasta(work / "t1.fa", [("t1", "AAA")])
+    _write_fasta(work / "t2.fa", [("t1", "TT")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "selected",
+                "coordinate_stat": "c1.npy",
+                "target_fasta": "t1.fa",
+                "strand": "+",
+            },
+            {
+                "round_id": "followup",
+                "coordinate_stat": "c2.npy",
+                "target_fasta": "t2.fa",
+                "strand": "+",
+            },
+        ],
+    )
+    out = tmp_path / "bundle"
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=filtered_bed,
+            manifest=manifest,
+            output_dir=out,
+            write_replaced_windows=True,
+        )
+    )
+    records = _read_fasta(out / "sequences.fasta")
+    assert len(records) == 1
+    # Round1 AAA @+1 then round2 TT @-1 → ACGTTTAAAC
+    assert records[0] == ("r000001|chr1:100-110|target=t1", "ACGTTTAAAC")
+    rows = _read_manifest(out / "manifest.tsv")
+    assert len(rows) == 2
+    assert [row["round_id"] for row in rows] == ["selected", "followup"]
+    assert (out / "replaced" / "selected.fasta").is_file()
+    assert (out / "replaced" / "followup.fasta").is_file()
+
+
