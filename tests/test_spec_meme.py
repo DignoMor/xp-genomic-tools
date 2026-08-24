@@ -431,3 +431,139 @@ def test_spec006_parse_rejects_invalid_alength_dimension(tmp_path):
     path = _write_meme(tmp_path, body)
     with pytest.raises(ValueError, match="(?i)dimension|alength|w"):
         MemeMotif(str(path))
+
+
+# --- SPEC002 / SPEC006 optional per-motif URL record ---
+
+
+def test_spec002_006_parse_accepts_trailing_url_record(tmp_path):
+    body = (
+        VALID_MEME_HEADER
+        + _motif_block()
+        + "URL http://example.org/MA0139.2\n"
+    )
+    path = _write_meme(tmp_path, body)
+    mm = MemeMotif(str(path))
+    assert mm.get_motif_list() == ["SPEC_TINY"]
+    np.testing.assert_allclose(mm.get_motif_pwm("SPEC_TINY"), EXPECTED_PWM, atol=1e-6)
+
+
+def test_spec002_006_parse_accepts_url_between_motifs(tmp_path):
+    body = (
+        VALID_MEME_HEADER
+        + _motif_block("FIRST")
+        + "URL http://example.org/first\n"
+        + _motif_block("SECOND")
+    )
+    path = _write_meme(tmp_path, body)
+    mm = MemeMotif(str(path))
+    assert mm.get_motif_list() == ["FIRST", "SECOND"]
+    np.testing.assert_allclose(mm.get_motif_pwm("FIRST"), EXPECTED_PWM, atol=1e-6)
+    np.testing.assert_allclose(mm.get_motif_pwm("SECOND"), EXPECTED_PWM, atol=1e-6)
+
+
+def _assert_modeled_collections_equal(left: MemeMotif, right: MemeMotif) -> None:
+    assert left.get_meme_version() == right.get_meme_version()
+    assert left.get_alphabet() == right.get_alphabet()
+    assert left.get_strands() == right.get_strands()
+    assert left.get_bg_freq() == right.get_bg_freq()
+    assert left.get_motif_list() == right.get_motif_list()
+    for name in left.get_motif_list():
+        assert left.get_motif_alphabet_length(name) == right.get_motif_alphabet_length(name)
+        assert left.get_motif_length(name) == right.get_motif_length(name)
+        assert left.get_motif_num_source_sites(name) == right.get_motif_num_source_sites(name)
+        assert left.get_motif_source_eval(name) == right.get_motif_source_eval(name)
+        np.testing.assert_allclose(
+            left.get_motif_pwm(name),
+            right.get_motif_pwm(name),
+            atol=1e-6,
+        )
+
+
+def test_spec002_006_url_and_non_url_collections_are_modeled_equal(tmp_path):
+    without_url = VALID_MEME_HEADER + _motif_block("A") + _motif_block("B")
+    with_url = (
+        VALID_MEME_HEADER
+        + _motif_block("A")
+        + "URL http://example.org/A\n"
+        + _motif_block("B")
+        + "URL http://example.org/B\n"
+    )
+    left = MemeMotif(str(_write_meme(tmp_path, without_url, "without.meme")))
+    right = MemeMotif(str(_write_meme(tmp_path, with_url, "with.meme")))
+    _assert_modeled_collections_equal(left, right)
+
+
+def test_spec002_006_url_and_non_url_serialize_identically_without_url(tmp_path):
+    without_url = VALID_MEME_HEADER + _motif_block("A") + _motif_block("B")
+    with_url = (
+        VALID_MEME_HEADER
+        + _motif_block("A")
+        + "URL http://example.org/A\n"
+        + _motif_block("B")
+        + "URL http://example.org/B\n"
+    )
+    left = MemeMotif(str(_write_meme(tmp_path, without_url, "without.meme")))
+    right = MemeMotif(str(_write_meme(tmp_path, with_url, "with.meme")))
+    left_out = io.StringIO()
+    right_out = io.StringIO()
+    left.write_meme_file(left_out)
+    right.write_meme_file(right_out)
+    assert left_out.getvalue() == right_out.getvalue()
+    assert "URL" not in right_out.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("url_line", "match"),
+    [
+        ("URL\n", "(?i)malformed|URL|SPEC_TINY"),
+        ("URL http://example.org/a http://example.org/b\n", "(?i)malformed|URL|SPEC_TINY"),
+        ("url http://example.org/a\n", "(?i)MOTIF|url"),
+        ("URLfoo http://example.org/a\n", "(?i)MOTIF|URLfoo"),
+    ],
+)
+def test_spec002_006_parse_rejects_invalid_url_grammar(tmp_path, url_line, match):
+    body = VALID_MEME_HEADER + _motif_block() + url_line
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match=match):
+        MemeMotif(str(path))
+
+
+def test_spec002_006_parse_rejects_duplicate_url_for_motif(tmp_path):
+    body = (
+        VALID_MEME_HEADER
+        + _motif_block()
+        + "URL http://example.org/a\n"
+        + "URL http://example.org/b\n"
+    )
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)duplicate.*URL.*SPEC_TINY|URL.*duplicate.*SPEC_TINY"):
+        MemeMotif(str(path))
+
+
+def test_spec002_006_parse_rejects_url_before_first_motif(tmp_path):
+    body = VALID_MEME_HEADER + "URL http://example.org/x\n" + _motif_block()
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)URL.*(before any motif|placement|precedes)"):
+        MemeMotif(str(path))
+
+
+def test_spec002_006_url_inside_incomplete_pwm_is_matrix_failure(tmp_path):
+    body = (
+        VALID_MEME_HEADER
+        + "MOTIF SPEC_TINY\n"
+        + "letter-probability matrix: alength= 4 w= 3 nsites= 8 E= 1e-4\n"
+        + "0.700000\t0.100000\t0.100000\t0.100000\n"
+        + "URL http://example.org/mid\n"
+        + "0.100000\t0.100000\t0.700000\t0.100000\n"
+    )
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)truncat|matrix|PWM|row|numeric|SPEC_TINY"):
+        MemeMotif(str(path))
+
+
+def test_spec002_006_parse_rejects_unrelated_post_motif_record(tmp_path):
+    body = VALID_MEME_HEADER + _motif_block() + "COMMAND skip this\n"
+    path = _write_meme(tmp_path, body)
+    with pytest.raises(ValueError, match="(?i)MOTIF|COMMAND"):
+        MemeMotif(str(path))

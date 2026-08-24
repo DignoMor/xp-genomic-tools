@@ -116,6 +116,10 @@ class MemeMotif:
             if line is None:
                 break
             if not line.startswith("MOTIF"):
+                if self._url_record_tokens(line) is not None and not self.motifs:
+                    raise ValueError(
+                        f"URL record before any motif: {line!r}."
+                    )
                 raise ValueError(
                     f"Expected a MOTIF header, found: {line!r}."
                 )
@@ -174,6 +178,34 @@ class MemeMotif:
             self.motifs.append(motif_name)
             self.motif_info_dict[motif_name] = motif_info
             index = row_index
+
+            # Optional input-only URL record after a complete PWM.
+            url_index, url_line = _next_nonempty(index)
+            if url_line is not None:
+                url_tokens = self._url_record_tokens(url_line)
+                if url_tokens is not None:
+                    if len(url_tokens) != 2:
+                        raise ValueError(
+                            f"Malformed URL record for motif {motif_name!r}: "
+                            f"{url_line!r}."
+                        )
+                    index = url_index + 1
+                    dup_index, dup_line = _next_nonempty(index)
+                    if (
+                        dup_line is not None
+                        and self._url_record_tokens(dup_line) is not None
+                    ):
+                        raise ValueError(
+                            f"Duplicate URL record for motif {motif_name!r}."
+                        )
+
+    @staticmethod
+    def _url_record_tokens(line: str):
+        '''Return split tokens when line is a URL keyword record, else None.'''
+        tokens = line.split()
+        if tokens and tokens[0] == "URL":
+            return tokens
+        return None
 
     @staticmethod
     def _parse_background_line(line: str, alphabet: str):
