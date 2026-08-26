@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 import matplotlib.pyplot as plt
+from matplotlib.colors import TwoSlopeNorm
 
 class GenomicElementExport:
     @staticmethod
@@ -166,10 +167,26 @@ class GenomicElementExport:
                             )
 
         parser.add_argument("--negative", 
-                            help="Whether the track is negative.",
+                            help=(
+                                "Legacy magnitude-mode control: select the Blues palette and "
+                                "negate the mean profile when True, or Reds when False. "
+                                "Required for every track; ignored for signed (--absolute False) rendering."
+                            ),
                             type=str2bool,
                             action="append",
                             required=True,
+                            )
+
+        parser.add_argument("--absolute",
+                            help=(
+                                "Whether to render the track by absolute magnitude (True) "
+                                "or as signed values (False). Omit to use magnitude mode "
+                                "for every track; when supplied, provide one value per track."
+                            ),
+                            type=str2bool,
+                            action="append",
+                            required=False,
+                            default=None,
                             )
 
         parser.add_argument("--per_track_max_percentile", 
@@ -597,12 +614,77 @@ class GenomicElementExport:
         ax.set_xticklabels([-width//2, 0, width//2])
 
     @staticmethod
+    def resolve_heatmap_absolute_flags(titles, absolute):
+        """Resolve optional repeated --absolute to one boolean per track."""
+        n_tracks = len(titles)
+        if absolute is None:
+            return [True] * n_tracks
+        if len(absolute) != n_tracks:
+            raise ValueError(
+                f"Number of absolute flags ({len(absolute)}) must match "
+                f"number of tracks ({n_tracks})"
+            )
+        return list(absolute)
+
+    @staticmethod
+    def prepare_heatmap_track_arr(track_list, absolute_mode):
+        """Build a rectangular track array for magnitude or signed rendering."""
+        track_arr = GenomicElementExport.track_list_to_arr(track_list)
+        if absolute_mode:
+            return np.abs(track_arr)
+        return track_arr
+
+    @staticmethod
+    def heatmap_row_sort_index(track_arr_list):
+        """Ascending shared order by max absolute magnitude; stable on ties."""
+        strengths = np.stack(
+            [np.max(np.abs(track_arr), axis=1) for track_arr in track_arr_list],
+            axis=1,
+        ).max(axis=1)
+        return np.argsort(strengths, kind="stable")
+
+    @staticmethod
+    def get_signed_heatmap_limit(track_arr, per_track_max_percentile, vmax_percentile):
+        """Symmetric signed limit from two-stage finite absolute-magnitude percentiles."""
+        abs_arr = np.abs(track_arr)
+        row_limits = np.percentile(abs_arr, per_track_max_percentile, axis=1)
+        limit = float(np.percentile(row_limits, vmax_percentile))
+        if limit == 0:
+            limit = 1.0
+        return limit
+
+    @staticmethod
+    def plot_signed_heatmap_image(ax, track_arr, sort_idx, title,
+                                  per_track_max_percentile, vmax_percentile):
+        """Plot a signed heatmap with RdBu_r and exact zero-centered limits."""
+        limit = GenomicElementExport.get_signed_heatmap_limit(
+            track_arr,
+            per_track_max_percentile,
+            vmax_percentile,
+        )
+        norm = TwoSlopeNorm(vmin=-limit, vcenter=0.0, vmax=limit)
+        imshow_pos = ax.imshow(
+            track_arr[sort_idx, :],
+            cmap="RdBu_r",
+            aspect="auto",
+            norm=norm,
+        )
+        ax.set_yticks([])
+        ax.set_xticks([])
+        ax.set_title(title)
+        return imshow_pos
+
+    @staticmethod
     def export_heatmap(args):
         if len(args.title) != len(args.track_npy):
             raise ValueError(f"Number of titles ({len(args.title)}) must match number of track_npy files ({len(args.track_npy)})")
         if len(args.title) != len(args.negative):
             raise ValueError(f"Number of titles ({len(args.title)}) must match number of negative flags ({len(args.negative)})")
-        
+        absolute_flags = GenomicElementExport.resolve_heatmap_absolute_flags(
+            args.title,
+            args.absolute,
+        )
+
         ge = GenomicElements(args.region_file_path, 
                              args.region_file_type, 
                              None, 
@@ -611,8 +693,11 @@ class GenomicElementExport:
             ge.load_region_anno_from_npy(track_title, track_npy, anno_type="track")
 
         track_arr_list = [
-            np.abs(GenomicElementExport.track_list_to_arr(ge.get_track_list(track_title)))
-            for track_title in args.title
+            GenomicElementExport.prepare_heatmap_track_arr(
+                ge.get_track_list(track_title),
+                absolute_mode,
+            )
+            for track_title, absolute_mode in zip(args.title, absolute_flags)
         ]
 
         fig, ax = plt.subplots(2, len(args.title), 
@@ -621,30 +706,43 @@ class GenomicElementExport:
                                squeeze=False,
                                )
 
-        # Figure out sorting
-        sort_idx = np.argsort(np.concatenate(track_arr_list, axis=1).max(axis=1))
+        sort_idx = GenomicElementExport.heatmap_row_sort_index(track_arr_list)
 
         for ind, track_title in enumerate(args.title):
-            track_arr = np.abs(GenomicElementExport.track_list_to_arr(ge.get_track_list(track_title)))
+            track_arr = track_arr_list[ind]
+            absolute_mode = absolute_flags[ind]
 
-            if args.negative[ind]:
-                plot_cmap = "Blues"
+            if absolute_mode:
+                plot_cmap = "Blues" if args.negative[ind] else "Reds"
+                GenomicElementExport.plot_heatmap_image(
+                    ax[0, ind],
+                    track_arr,
+                    sort_idx,
+                    plot_cmap,
+                    track_title,
+                    args.per_track_max_percentile,
+                    args.vmax_percentile,
+                )
+                GenomicElementExport.plot_heatmap_mean(
+                    ax[1, ind],
+                    track_arr,
+                    args.negative[ind],
+                )
             else:
-                plot_cmap = "Reds"
-
-            imshow_pos = GenomicElementExport.plot_heatmap_image(ax[0, ind], 
-                                                                 track_arr, 
-                                                                 sort_idx, 
-                                                                 plot_cmap, 
-                                                                 track_title,
-                                                                 args.per_track_max_percentile, 
-                                                                 args.vmax_percentile,
-                                                                 )
-
-            GenomicElementExport.plot_heatmap_mean(ax[1, ind], 
-                                                   track_arr, 
-                                                   args.negative[ind],
-                                                   )
+                imshow_pos = GenomicElementExport.plot_signed_heatmap_image(
+                    ax[0, ind],
+                    track_arr,
+                    sort_idx,
+                    track_title,
+                    args.per_track_max_percentile,
+                    args.vmax_percentile,
+                )
+                fig.colorbar(imshow_pos, ax=ax[0, ind])
+                GenomicElementExport.plot_heatmap_mean(
+                    ax[1, ind],
+                    track_arr,
+                    False,
+                )
 
         fig.tight_layout()
         fig.savefig(args.opath)
