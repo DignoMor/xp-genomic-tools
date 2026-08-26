@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "RGTools"
-version = "0.3.0a2"
+version = "0.3.0a3"
 description = "Regulatory Genome Tools — BED regions, motifs, BigWig tracks, and genomic element utilities"
 readme = "README.md"
 requires-python = ">=3.9"

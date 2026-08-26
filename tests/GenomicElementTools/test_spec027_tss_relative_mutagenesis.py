@@ -512,6 +512,40 @@ def test_minus_strand_reverse_complements_iupac_target(tmp_path: Path):
     assert row["target_length"] == "3"
 
 
+def test_minus_strand_upstream_coord_places_at_larger_genomic(tmp_path: Path):
+    """Minus upstream (negative) coords replace toward larger genomic positions."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "coord.npy", [-2])
+    _write_fasta(work / "targets.fa", [("t1", "AAA")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "minus_up",
+                "coordinate_stat": "coord.npy",
+                "target_fasta": "targets.fa",
+                "strand": "-",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=ONE_REGION,
+            manifest=manifest,
+            output_dir=out,
+        )
+    )
+    _, seq = _read_fasta(out / "sequences.fasta")[0]
+    # RC(AAA)=TTT; genomic_right = 105-(-2)=107; W=3 → index 5; replace CGT with TTT
+    assert seq == "ACGTATTTAC"
+    row = _read_manifest(out / "manifest.tsv")[0]
+    assert row["tss_relative_coordinate"] == "-2"
+    assert row["strand"] == "-"
+
+
 # --- Ticket 04: preflight ---
 
 

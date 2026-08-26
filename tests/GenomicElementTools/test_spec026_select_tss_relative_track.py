@@ -350,6 +350,53 @@ def test_motif_minus_window_padding_semantics(tmp_path: Path):
     assert bool(np.load(tmp_path / "mask.npy").ravel()[0])
 
 
+def test_minus_strand_selects_transcription_upstream_genomic_side(tmp_path: Path):
+    """Minus negative coords read larger genomic indices (transcription-upstream)."""
+    # motif_window.trebed: [100,120) revTSS=110; coord=-2, W=1 → genomic 112 → index 12
+    # Pre-fix mapping would read index 8 and miss this score.
+    track = np.zeros((1, 20), dtype=float)
+    track[0, 12] = 5.0
+    track_path = _build_track(tmp_path, track)
+
+    _run_cli(
+        _base_argv(
+            MOTIF_TREBED,
+            track_path,
+            tmp_path / "coord.npy",
+            tmp_path / "mask.npy",
+            strand="-",
+            target_coord=-2,
+            min_score=5.0,
+        )
+    )
+
+    assert np.load(tmp_path / "coord.npy").ravel()[0] == -2
+    assert bool(np.load(tmp_path / "mask.npy").ravel()[0])
+
+
+def test_minus_strand_ignores_pre_fix_downstream_index(tmp_path: Path):
+    """Score only on the pre-fix (genomic-downstream) index is not a match."""
+    # Old buggy mapping for coord=-2 used index 8; corrected mapping uses 12.
+    track = np.zeros((1, 20), dtype=float)
+    track[0, 8] = 9.0
+    track_path = _build_track(tmp_path, track)
+
+    _run_cli(
+        _base_argv(
+            MOTIF_TREBED,
+            track_path,
+            tmp_path / "coord.npy",
+            tmp_path / "mask.npy",
+            strand="-",
+            target_coord=-2,
+            min_score=5.0,
+        )
+    )
+
+    assert np.load(tmp_path / "coord.npy").ravel()[0] == 0
+    assert not bool(np.load(tmp_path / "mask.npy").ravel()[0])
+
+
 def test_motif_plus_window_uses_genomic_left_index(tmp_path: Path):
     """Plus motif window indexes the genomic-left 5-prime without padding shift."""
     track = np.zeros((1, 20), dtype=float)
