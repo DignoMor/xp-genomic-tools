@@ -82,20 +82,27 @@ def test_minus_strand_point_conversion_at_tss():
 
 
 def test_minus_strand_point_conversion_upstream_and_downstream():
-    """Minus point indices use the same genomic mapping as plus when W=1."""
-    # genomic_right = tss + _to_linear(coord); index = genomic - start for W=1
+    """Minus reverses direction: negative coords are transcription-upstream."""
+    # genomic_right = tss - _to_linear(coord); index = genomic - start for W=1
+    # Issue #8: coord=-2 at tss=110 → genomic 112 → index 12 (not 8).
+    assert (
+        tss_relative_to_track_index(
+            strand="-", coord=-2, start=100, end=120, tss=110, track_window_size=1
+        )
+        == 12
+    )
     assert (
         tss_relative_to_track_index(
             strand="-", coord=-2, start=100, end=110, tss=105, track_window_size=1
         )
-        == 3
-    )
+        == 7
+    )  # 105 - (-2) = 107 → index 7
     assert (
         tss_relative_to_track_index(
             strand="-", coord=3, start=100, end=110, tss=105, track_window_size=1
         )
-        == 7
-    )
+        == 3
+    )  # 105 - (3 - 1) = 103 → index 3
 
 
 def test_plus_motif_window_index_is_genomic_left():
@@ -128,6 +135,23 @@ def test_minus_motif_window_index_subtracts_padding():
         )
         == 8
     )
+
+
+def test_minus_motif_window_upstream_and_downstream():
+    """Minus W>1 reverses direction then subtracts W-1 for genomic-left index."""
+    # [100,120), tss=110, W=3: genomic_right = tss - linear; index = genomic - start - 2
+    assert (
+        tss_relative_to_track_index(
+            strand="-", coord=-2, start=100, end=120, tss=110, track_window_size=3
+        )
+        == 10
+    )  # genomic_right 112 → index 10
+    assert (
+        tss_relative_to_track_index(
+            strand="-", coord=3, start=100, end=120, tss=110, track_window_size=3
+        )
+        == 6
+    )  # genomic_right 108 → index 6
 
 
 def test_edge_positions_plus_and_minus_with_window():

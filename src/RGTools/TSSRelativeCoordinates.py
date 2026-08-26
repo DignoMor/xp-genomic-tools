@@ -57,10 +57,12 @@ def tss_relative_to_track_index(
     """Convert a TSS-relative coordinate to a row-local genomic-forward track index.
 
     Tracks are indexed in genomic-forward order. On ``+``, the reported coordinate
-    is the genomic-left strand-oriented 5-prime base of the scored window and the
-    index is ``genomic - start``. On ``-``, the reported coordinate is the
-    genomic-right strand-oriented 5-prime base and the index subtracts
-    ``track_window_size - 1``. Genomic position is ``tss + _to_linear(coord)``.
+    is the genomic-left strand-oriented 5-prime base of the scored window,
+    genomic position is ``tss + _to_linear(coord)``, and the index is
+    ``genomic - start``. On ``-``, transcription direction is reversed so genomic
+    position is ``tss - _to_linear(coord)``, the reported coordinate is the
+    genomic-right strand-oriented 5-prime base, and the index subtracts
+    ``track_window_size - 1``.
     """
     if strand not in ("+", "-"):
         raise ValueError(
@@ -77,10 +79,12 @@ def tss_relative_to_track_index(
             f"Invalid interval [{start}, {end}): end must be greater than start."
         )
 
-    genomic = tss + _to_linear(coord)
+    linear = _to_linear(coord)
     if strand == "+":
+        genomic = tss + linear
         track_index = genomic - start
     else:
+        genomic = tss - linear
         track_index = genomic - start - (track_window_size - 1)
 
     length = end - start
