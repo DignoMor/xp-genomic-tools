@@ -181,7 +181,9 @@ class GenomicElementExport:
                             help=(
                                 "Whether to render the track by absolute magnitude (True) "
                                 "or as signed values (False). Omit to use magnitude mode "
-                                "for every track; when supplied, provide one value per track."
+                                "for every track; when supplied, provide one value per track. "
+                                "Non-finite cells are masked in both modes; signed mode also "
+                                "treats shorter-row padding as missing."
                             ),
                             type=str2bool,
                             action="append",
@@ -533,10 +535,10 @@ class GenomicElementExport:
         Get the vmin and vmax for the heatmap.
         This function first determines the maximum value per track, 
         then determines the vmax based on percentile of the determined 
-        maximum values.
+        maximum values. Missing/non-finite cells are excluded.
 
         Keyword arguments:
-        - track_arr: Track array. Must be positive.
+        - track_arr: Track array. Must be non-negative where finite.
         - per_track_max_percentile: Percentile used to determine the maximum value per track.
         - vmax_percentile: Percentile used to determine the vmax.
 
@@ -545,8 +547,9 @@ class GenomicElementExport:
         - vmax: Vmax.
         '''
         vmin=0
-        top_1p_signal_per_track = np.percentile(track_arr, per_track_max_percentile, axis=1)
-        vmax = np.percentile(top_1p_signal_per_track, vmax_percentile)
+        finite_arr = np.where(np.isfinite(track_arr), track_arr, np.nan)
+        top_1p_signal_per_track = np.nanpercentile(finite_arr, per_track_max_percentile, axis=1)
+        vmax = np.nanpercentile(top_1p_signal_per_track, vmax_percentile)
 
         if vmax==0: 
             vmax = 1
@@ -554,9 +557,10 @@ class GenomicElementExport:
         return vmin, vmax
 
     @staticmethod
-    def track_list_to_arr(track_list):
+    def track_list_to_arr(track_list, pad_value=0.0):
+        """Rectangularize logical track rows, padding shorter rows with pad_value."""
         max_len = max(len(track) for track in track_list) if len(track_list) > 0 else 0
-        track_arr = np.zeros((len(track_list), max_len))
+        track_arr = np.full((len(track_list), max_len), pad_value, dtype=float)
         for i, track in enumerate(track_list):
             track_arr[i, :len(track)] = track
         return track_arr
@@ -570,7 +574,7 @@ class GenomicElementExport:
 
         Keyword arguments:
         - ax: Axes object.
-        - track_arr: Track array. Must be positive.
+        - track_arr: Track array. Must be non-negative where finite.
         - sort_idx: Sort index.
         - plot_cmap: Plot cmap.
         - title: Title.
@@ -585,12 +589,13 @@ class GenomicElementExport:
                                                                 vmax_percentile, 
                                                                 )
 
-        imshow_pos = ax.imshow(track_arr[sort_idx, :], 
-                               cmap=plot_cmap,
-                               aspect="auto",
-                               vmin=vmin,
-                               vmax=vmax,
-                               )
+        imshow_pos = ax.imshow(
+            np.ma.masked_invalid(track_arr[sort_idx, :]),
+            cmap=plot_cmap,
+            aspect="auto",
+            vmin=vmin,
+            vmax=vmax,
+        )
         
         ax.set_yticks([])
         ax.set_xticks([])
@@ -601,11 +606,13 @@ class GenomicElementExport:
     @staticmethod
     def plot_heatmap_mean(ax, track_arr, negative_sig):
         '''
-        Plot the mean signal.
+        Plot the mean signal over finite values at each position.
         '''
         width = track_arr.shape[1]
+        finite_arr = np.where(np.isfinite(track_arr), track_arr, np.nan)
+        mean_profile = np.nanmean(finite_arr, axis=0)
         ax.plot(np.arange(width), 
-                - track_arr.mean(axis=0) if negative_sig else track_arr.mean(axis=0),
+                - mean_profile if negative_sig else mean_profile,
                 color="black",
                 )
         ax.set_ylabel("Mean signal")
@@ -628,27 +635,35 @@ class GenomicElementExport:
 
     @staticmethod
     def prepare_heatmap_track_arr(track_list, absolute_mode):
-        """Build a rectangular track array for magnitude or signed rendering."""
-        track_arr = GenomicElementExport.track_list_to_arr(track_list)
+        """Build a rectangular track array for magnitude or signed rendering.
+
+        Magnitude mode zero-pads shorter rows; signed mode pads with NaN.
+        Explicit non-finite cells are retained as missing in both modes.
+        """
+        pad_value = 0.0 if absolute_mode else np.nan
+        track_arr = GenomicElementExport.track_list_to_arr(track_list, pad_value=pad_value)
         if absolute_mode:
             return np.abs(track_arr)
         return track_arr
 
     @staticmethod
     def heatmap_row_sort_index(track_arr_list):
-        """Ascending shared order by max absolute magnitude; stable on ties."""
-        strengths = np.stack(
-            [np.max(np.abs(track_arr), axis=1) for track_arr in track_arr_list],
-            axis=1,
-        ).max(axis=1)
+        """Ascending shared order by max finite absolute magnitude; stable on ties."""
+        per_track_strengths = []
+        for track_arr in track_arr_list:
+            abs_arr = np.abs(track_arr)
+            finite_abs = np.where(np.isfinite(abs_arr), abs_arr, np.nan)
+            per_track_strengths.append(np.nanmax(finite_abs, axis=1))
+        strengths = np.nanmax(np.stack(per_track_strengths, axis=1), axis=1)
         return np.argsort(strengths, kind="stable")
 
     @staticmethod
     def get_signed_heatmap_limit(track_arr, per_track_max_percentile, vmax_percentile):
         """Symmetric signed limit from two-stage finite absolute-magnitude percentiles."""
         abs_arr = np.abs(track_arr)
-        row_limits = np.percentile(abs_arr, per_track_max_percentile, axis=1)
-        limit = float(np.percentile(row_limits, vmax_percentile))
+        finite_abs = np.where(np.isfinite(abs_arr), abs_arr, np.nan)
+        row_limits = np.nanpercentile(finite_abs, per_track_max_percentile, axis=1)
+        limit = float(np.nanpercentile(row_limits, vmax_percentile))
         if limit == 0:
             limit = 1.0
         return limit
@@ -664,7 +679,7 @@ class GenomicElementExport:
         )
         norm = TwoSlopeNorm(vmin=-limit, vcenter=0.0, vmax=limit)
         imshow_pos = ax.imshow(
-            track_arr[sort_idx, :],
+            np.ma.masked_invalid(track_arr[sort_idx, :]),
             cmap="RdBu_r",
             aspect="auto",
             norm=norm,
@@ -673,6 +688,20 @@ class GenomicElementExport:
         ax.set_xticks([])
         ax.set_title(title)
         return imshow_pos
+
+    @staticmethod
+    def validate_heatmap_track_finite_rows(track_title, track_arr):
+        """Reject track-rows (or an entire track) with no finite value."""
+        finite_per_row = np.isfinite(track_arr).any(axis=1)
+        if not finite_per_row.any():
+            raise ValueError(
+                f"Track '{track_title}' has no finite values in any region row"
+            )
+        for row_idx, has_finite in enumerate(finite_per_row):
+            if not has_finite:
+                raise ValueError(
+                    f"Track '{track_title}' region row {row_idx} has no finite values"
+                )
 
     @staticmethod
     def export_heatmap(args):
@@ -699,6 +728,11 @@ class GenomicElementExport:
             )
             for track_title, absolute_mode in zip(args.title, absolute_flags)
         ]
+        for track_title, track_arr in zip(args.title, track_arr_list):
+            GenomicElementExport.validate_heatmap_track_finite_rows(
+                track_title,
+                track_arr,
+            )
 
         fig, ax = plt.subplots(2, len(args.title), 
                                figsize=(4 * len(args.title), 8),

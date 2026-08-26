@@ -1,4 +1,4 @@
-"""SPEC014 contract tests: GenomicElementTools export Heatmap (finite signed rendering)."""
+"""SPEC014 contract tests: GenomicElementTools export Heatmap (signed + missing)."""
 
 from __future__ import annotations
 
@@ -373,3 +373,263 @@ def test_export_heatmap_writes_supported_image(tmp_path: Path):
     )
     assert opath.is_file()
     assert opath.stat().st_size > 0
+
+
+def test_export_heatmap_explicit_nan_cells_masked_magnitude_and_signed(tmp_path: Path):
+    """Explicit non-finite cells render masked in magnitude and signed modes (SPEC014)."""
+    nan = float("nan")
+    mag = _save_track(
+        tmp_path / "mag_nan.npy",
+        [
+            [nan, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, nan],  # edge NaNs
+            [1.0, 1.0, nan, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # interior NaN
+            [3.0] * 10,
+        ],
+    )
+    signed = _save_track(
+        tmp_path / "signed_nan.npy",
+        [
+            [nan, -2.0, -2.0, -2.0, -2.0, -2.0, -2.0, -2.0, -2.0, nan],
+            [1.0, 1.0, nan, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            [-3.0] * 10,
+        ],
+    )
+    fig = _capture_figure(
+        _heatmap_argv(
+            tmp_path,
+            [("Mag", mag, "False"), ("Signed", signed, "False")],
+            absolute=["True", "False"],
+        )
+    )
+    mag_img = _panel_image(fig, 0).get_array()
+    signed_img = _panel_image(fig, 1).get_array()
+    assert np.ma.isMaskedArray(mag_img)
+    assert np.ma.isMaskedArray(signed_img)
+    # Shared order by finite abs strength: row1 (1), row0 (2), row2 (3)
+    np.testing.assert_allclose(
+        np.asarray(mag_img[0]),
+        [1.0, 1.0, nan, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        equal_nan=True,
+    )
+    np.testing.assert_allclose(
+        np.asarray(mag_img[1]),
+        [nan, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, nan],
+        equal_nan=True,
+    )
+    np.testing.assert_allclose(np.asarray(mag_img[2]), np.full(10, 3.0))
+    assert bool(np.ma.getmaskarray(mag_img)[1, 0])
+    assert bool(np.ma.getmaskarray(mag_img)[1, 9])
+    assert bool(np.ma.getmaskarray(mag_img)[0, 2])
+    assert bool(np.ma.getmaskarray(signed_img)[1, 0])
+    assert bool(np.ma.getmaskarray(signed_img)[1, 9])
+    assert bool(np.ma.getmaskarray(signed_img)[0, 2])
+    assert signed_img[1, 1] == -2.0
+    assert mag_img[0, 0] == 1.0
+
+
+def _write_unequal_bed3(path: Path) -> Path:
+    """Three regions with lengths 4, 6, and 8 (max width 8)."""
+    path.write_text("chrA\t0\t4\nchrB\t0\t6\nchrC\t0\t8\n")
+    return path
+
+
+def _heatmap_argv_regions(
+    tmp_path: Path,
+    region_path: Path,
+    tracks: list[tuple[str, Path, str]],
+    *,
+    absolute: list[str] | None = None,
+    opath: Path | None = None,
+    extra: list[str] | None = None,
+) -> list[str]:
+    argv = _heatmap_argv(tmp_path, tracks, absolute=absolute, opath=opath, extra=extra)
+    # Replace the default tiny.bed3 path with the custom region file.
+    idx = argv.index("--region_file_path")
+    argv[idx + 1] = str(region_path)
+    return argv
+
+
+def test_export_heatmap_signed_padding_masked_magnitude_zero_pad(tmp_path: Path):
+    """Signed shorter-row padding is missing; magnitude padding stays zero (SPEC014)."""
+    bed = _write_unequal_bed3(tmp_path / "unequal.bed3")
+    # Storage width = max region length 8; get_track_list slices to 4/6/8.
+    mag = _save_track(
+        tmp_path / "mag_pad.npy",
+        [
+            [4.0, 4.0, 4.0, 4.0, 0.0, 0.0, 0.0, 0.0],
+            [2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        ],
+    )
+    signed = _save_track(
+        tmp_path / "signed_pad.npy",
+        [
+            [-4.0, -4.0, -4.0, -4.0, 0.0, 0.0, 0.0, 0.0],
+            [2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 0.0, 0.0],
+            [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+        ],
+    )
+    fig = _capture_figure(
+        _heatmap_argv_regions(
+            tmp_path,
+            bed,
+            [("Mag", mag, "False"), ("Signed", signed, "False")],
+            absolute=["True", "False"],
+        )
+    )
+    mag_img = _panel_image(fig, 0).get_array()
+    signed_img = _panel_image(fig, 1).get_array()
+    # Strengths after slice+pad: mag 4,2,1 and signed 4,2,1 → ascending row2,row1,row0
+    assert mag_img.shape == (3, 8)
+    # Display row0 = original row2 (len 8): fully finite, no padding.
+    np.testing.assert_allclose(np.asarray(mag_img[0]), np.full(8, 1.0))
+    # Display row1 = original row1 (len 6): magnitude zero-pads cols 6-7.
+    assert not bool(np.ma.getmaskarray(mag_img)[1, 6])
+    assert not bool(np.ma.getmaskarray(mag_img)[1, 7])
+    assert mag_img[1, 6] == 0.0
+    assert mag_img[1, 7] == 0.0
+    # Display row2 = original row0 (len 4): magnitude zero-pads cols 4-7.
+    assert mag_img[2, 4] == 0.0
+    assert mag_img[2, 7] == 0.0
+    # Signed: display row0 is original row2 (len 8) — no padding mask at end.
+    assert not bool(np.ma.getmaskarray(signed_img)[0, 7])
+    # Display row1 is original row1 (len 6) — cols 6-7 masked
+    assert bool(np.ma.getmaskarray(signed_img)[1, 6])
+    assert bool(np.ma.getmaskarray(signed_img)[1, 7])
+    # Display row2 is original row0 (len 4) — cols 4-7 masked
+    assert bool(np.ma.getmaskarray(signed_img)[2, 4])
+    assert bool(np.ma.getmaskarray(signed_img)[2, 7])
+    assert signed_img[2, 0] == -4.0
+
+
+def test_export_heatmap_finite_only_limits_means_and_tied_order(tmp_path: Path):
+    """Limits/means use finite cells; missing does not invent sort strength (SPEC014)."""
+    nan = float("nan")
+    # Asymmetric finite values with a huge NaN-adjacent distractor omitted via NaN.
+    signed = _save_track(
+        tmp_path / "lim.npy",
+        [
+            [nan, -10.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # finite max abs 10
+            [2.0, nan, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0],  # finite max abs 2
+            [nan, nan, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # finite max abs 0
+        ],
+    )
+    mag = _save_track(
+        tmp_path / "lim_mag.npy",
+        [
+            [nan, 10.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [2.0, nan, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0],
+            [nan, nan, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        ],
+    )
+    fig = _capture_figure(
+        _heatmap_argv(
+            tmp_path,
+            [("Mag", mag, "True"), ("Signed", signed, "True")],
+            absolute=["True", "False"],
+            extra=["--per_track_max_percentile", "100", "--vmax_percentile", "100"],
+        )
+    )
+    # Strengths 10, 2, 0 → ascending row2, row1, row0; same permutation both panels.
+    mag_img = np.asarray(_panel_image(fig, 0).get_array(), dtype=float)
+    signed_img = np.asarray(_panel_image(fig, 1).get_array(), dtype=float)
+    np.testing.assert_allclose(mag_img[0, 2], 0.0)
+    np.testing.assert_allclose(mag_img[1, 0], 2.0)
+    np.testing.assert_allclose(mag_img[2, 1], 10.0)
+    np.testing.assert_allclose(signed_img[0, 2], 0.0)
+    np.testing.assert_allclose(signed_img[1, 0], 2.0)
+    np.testing.assert_allclose(signed_img[2, 1], -10.0)
+
+    norm = _panel_image(fig, 1).norm
+    assert isinstance(norm, TwoSlopeNorm)
+    assert norm.vcenter == 0
+    assert norm.vmin == -norm.vmax
+    assert norm.vmax == 10.0
+
+    # Means exclude NaNs position-wise; magnitude keeps --negative orientation.
+    # Columns: 0 uses rows [nan,2,nan] → mean 2; then negate for magnitude.
+    mag_mean = _panel_mean_y(fig, 0)
+    signed_mean = _panel_mean_y(fig, 1)
+    assert mag_mean[0] == pytest.approx(-2.0)
+    assert signed_mean[0] == pytest.approx(2.0)
+    assert signed_mean[1] == pytest.approx(-10.0)
+
+    # Tied finite strengths retain original order across both panels.
+    mag_tie = _save_track(
+        tmp_path / "tie_mag.npy",
+        [
+            [nan, 4.0] + [0.0] * 8,
+            [4.0, nan] + [0.0] * 8,
+            [1.0] * 10,
+        ],
+    )
+    signed_tie = _save_track(
+        tmp_path / "tie_signed.npy",
+        [
+            [nan, -4.0] + [0.0] * 8,
+            [4.0, nan] + [0.0] * 8,
+            [0.5] * 10,
+        ],
+    )
+    # strengths: 4, 4, 1 → ascending row2, then stable row0, row1
+    fig_tie = _capture_figure(
+        _heatmap_argv(
+            tmp_path,
+            [("Mag", mag_tie, "False"), ("Signed", signed_tie, "False")],
+            absolute=["True", "False"],
+        )
+    )
+    mag_tie_img = np.asarray(_panel_image(fig_tie, 0).get_array(), dtype=float)
+    signed_tie_img = np.asarray(_panel_image(fig_tie, 1).get_array(), dtype=float)
+    np.testing.assert_allclose(mag_tie_img[0, 0], 1.0)
+    np.testing.assert_allclose(mag_tie_img[1, 1], 4.0)
+    np.testing.assert_allclose(mag_tie_img[2, 0], 4.0)
+    np.testing.assert_allclose(signed_tie_img[0, 0], 0.5)
+    np.testing.assert_allclose(signed_tie_img[1, 1], -4.0)
+    np.testing.assert_allclose(signed_tie_img[2, 0], 4.0)
+
+
+def test_export_heatmap_rejects_all_missing_row_with_title_and_row(tmp_path: Path):
+    """A track-row with no finite value fails with title and row context (SPEC014)."""
+    nan = float("nan")
+    bad = _save_track(
+        tmp_path / "bad_row.npy",
+        [
+            [1.0] * 10,
+            [nan] * 10,
+            [2.0] * 10,
+        ],
+    )
+    ok = _save_track(
+        tmp_path / "ok.npy",
+        [
+            [1.0] * 10,
+            [3.0] * 10,  # other panel has finite values for the same region
+            [2.0] * 10,
+        ],
+    )
+    with pytest.raises(ValueError, match=r"MissingTrack|row 1"):
+        _run_cli(
+            _heatmap_argv(
+                tmp_path,
+                [("MissingTrack", bad, "False"), ("OkTrack", ok, "False")],
+                absolute=["False", "True"],
+            )
+        )
+
+
+def test_export_heatmap_rejects_entirely_nonfinite_track(tmp_path: Path):
+    """An entirely non-finite track fails before scale/figure output (SPEC014)."""
+    nan = float("nan")
+    all_nan = _save_track(
+        tmp_path / "all_nan.npy",
+        [[nan] * 10, [nan] * 10, [nan] * 10],
+    )
+    with pytest.raises(ValueError, match=r"AllNanTrack|no finite"):
+        _run_cli(
+            _heatmap_argv(
+                tmp_path,
+                [("AllNanTrack", all_nan, "False")],
+                absolute=["False"],
+            )
+        )
