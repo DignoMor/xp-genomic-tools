@@ -5,11 +5,11 @@ import unittest
 
 import pandas as pd
 
-from ExogeneousSequenceTools.ExogeneousSequenceAssemble import ExogeneousSequenceAssemble
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from ExogenousSequenceTools.ExogenousSequenceAssemble import ExogenousSequenceAssemble
+from RGTools.ExogenousSequences import ExogenousSequences
 
 
-class ExogeneousSequenceAssembleTest(unittest.TestCase):
+class ExogenousSequenceAssembleTest(unittest.TestCase):
     def setUp(self):
         self.test_dir = "est_assemble_test_dir"
         os.makedirs(self.test_dir, exist_ok=True)
@@ -27,27 +27,27 @@ class ExogeneousSequenceAssembleTest(unittest.TestCase):
             output_fasta=os.path.join(self.test_dir, "output.fasta"),
         )
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["seq1", "seq2", "seq3"],
             ["ATCG", "TTGA", "CCAT"],
             args.fasta,
         )
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["left_adapter"],
             ["AAA"],
             args.left_adapter_fasta,
         )
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["right_adapter"],
             ["TTT"],
             args.right_adapter_fasta,
         )
 
-        ExogeneousSequenceAssemble.main(args)
+        ExogenousSequenceAssemble.main(args)
 
-        output_es = ExogeneousSequences(args.output_fasta)
+        output_es = ExogenousSequences(args.output_fasta)
         self.assertEqual(output_es.get_region_bed_table().get_chrom_names()[1], "seq2")
         self.assertEqual(output_es.get_all_region_seqs()[1], "AAATTGATTT")
 
@@ -60,21 +60,21 @@ class ExogeneousSequenceAssembleTest(unittest.TestCase):
             id_method="5_3",
         )
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["seq51", "seq52", "seq53"],
             ["ATCG", "TTGA", "CCAT"],
             args.fasta5,
         )
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["seq31", "seq32", "seq33"],
             ["ATCG", "TTGA", "CCAT"],
             args.fasta3,
         )
 
-        ExogeneousSequenceAssemble.main(args)
+        ExogenousSequenceAssemble.main(args)
 
-        output_es = ExogeneousSequences(args.output_fasta)
+        output_es = ExogenousSequences(args.output_fasta)
         self.assertEqual(output_es.get_region_bed_table().get_chrom_names()[1], "seq52_seq32")
         self.assertEqual(output_es.get_all_region_seqs()[1], "TTGATTGA")
 
@@ -85,19 +85,19 @@ class ExogeneousSequenceAssembleTest(unittest.TestCase):
         output_fasta = os.path.join(self.test_dir, "output.fasta")
         metadata_path = os.path.join(self.test_dir, "metadata.csv")
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["barcode1", "barcode2", "barcode3", "barcode4"],
             ["A", "T", "C", "G"],
             barcode_fasta,
         )
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["seq1", "seq2"],
             ["ATCG", "TTGA"],
             input_fasta1,
         )
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["seq3", "seq4"],
             ["CCAT", "GGTA"],
             input_fasta2,
@@ -114,9 +114,9 @@ class ExogeneousSequenceAssembleTest(unittest.TestCase):
             fasta_id_type="original",
         )
 
-        ExogeneousSequenceAssemble.main(args)
+        ExogenousSequenceAssemble.main(args)
 
-        output_es = ExogeneousSequences(output_fasta)
+        output_es = ExogenousSequences(output_fasta)
         self.assertEqual(output_es.get_region_bed_table().get_chrom_names()[1], "seq2")
         self.assertEqual(output_es.get_all_region_seqs()[1], "TTTGAT")
 
@@ -134,19 +134,19 @@ class ExogeneousSequenceAssembleTest(unittest.TestCase):
         output_fasta = os.path.join(self.test_dir, "output.fasta")
         metadata_path = os.path.join(self.test_dir, "metadata.csv")
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["barcode1", "barcode2"],
             ["A", "T"],
             barcode_fasta,
         )
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["seq1", "seq2"],
             ["ATCG", "TTGA"],
             input_fasta1,
         )
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["seq3", "seq4"],
             ["CCAT", "GGTA"],
             input_fasta2,
@@ -164,7 +164,7 @@ class ExogeneousSequenceAssembleTest(unittest.TestCase):
         )
 
         with self.assertRaises(ValueError) as context:
-            ExogeneousSequenceAssemble.main(args)
+            ExogenousSequenceAssemble.main(args)
 
         self.assertEqual(
             str(context.exception),
@@ -177,13 +177,13 @@ class ExogeneousSequenceAssembleTest(unittest.TestCase):
         output_fasta = os.path.join(self.test_dir, "output.fasta")
         metadata_path = os.path.join(self.test_dir, "metadata.csv")
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["barcode1", "barcode2", "barcode3"],
             ["A", "T", "C"],
             barcode_fasta,
         )
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["seq1", "seq2"],
             ["ATCG", "TTGA"],
             input_fasta,
@@ -200,8 +200,8 @@ class ExogeneousSequenceAssembleTest(unittest.TestCase):
             fasta_id_type="barcode",
         )
 
-        ExogeneousSequenceAssemble.main(args)
-        output_ids = ExogeneousSequences(output_fasta).get_region_bed_table().get_chrom_names()
+        ExogenousSequenceAssemble.main(args)
+        output_ids = ExogenousSequences(output_fasta).get_region_bed_table().get_chrom_names()
         self.assertEqual(output_ids, ["A", "T"])
 
 

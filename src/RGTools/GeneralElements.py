@@ -5,10 +5,10 @@ from Bio import SeqIO
 
 class GeneralElements(abc.ABC):
     '''
-    Abstract base class for GenomicElements and ExogeneousSequences.
+    Abstract base class for GenomicElements and ExogenousSequences.
     
     This class provides common functionality for handling genomic elements
-    and exogeneous sequences, including:
+    and exogenous sequences, including:
     - Annotation management
     - Sequence operations
     - Bed table operations

@@ -2,7 +2,7 @@
 from RGTools.GenomicElements import GenomicElements
 from RGTools.ListFile import ListFile
 from RGTools.BedTable import BedTable3, BedRegion
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from RGTools.ExogenousSequences import ExogenousSequences
 
 import numpy as np
 import re
@@ -23,7 +23,7 @@ class GenomicElementImport:
 
         parser_allele_expanded_es = subparsers.add_parser(
             "allele_expanded_ES",
-            help="Import allele-expanded ExogeneousSequences FASTA and derive per-region outputs.",
+            help="Import allele-expanded ExogenousSequences FASTA and derive per-region outputs.",
         )
         GenomicElementImport.set_parser_allele_expanded_es(parser_allele_expanded_es)
 
@@ -136,7 +136,7 @@ class GenomicElementImport:
                 f"Got {len(args.stat_name)}, {len(args.stat_npy)}, and {len(args.stat_selection_method)}."
             )
 
-        input_es = ExogeneousSequences(args.inpath)
+        input_es = ExogenousSequences(args.inpath)
         seq_ids = list(input_es.get_sequence_ids())
         if len(seq_ids) == 0:
             raise ValueError(f"No FASTA entries found in {args.inpath}")

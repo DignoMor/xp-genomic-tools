@@ -1,4 +1,4 @@
-"""SPEC020 contract tests: ExogeneousSequenceTools onehot / motif_search."""
+"""SPEC020 contract tests: ExogenousSequenceTools onehot / motif_search."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ExogeneousSequenceTools.Motif import Motif
-from ExogeneousSequenceTools.cli import ExogeneousSequenceTools
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from ExogenousSequenceTools.Motif import Motif
+from ExogenousSequenceTools.cli import ExogenousSequenceTools
+from RGTools.ExogenousSequences import ExogenousSequences
 from RGTools.MemeMotif import MemeMotif
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
@@ -33,13 +33,13 @@ def _meme_fixture() -> Path:
 
 def _run(argv: list[str]):
     parser = argparse.ArgumentParser()
-    ExogeneousSequenceTools.set_parser(parser)
+    ExogenousSequenceTools.set_parser(parser)
     args = parser.parse_args(argv)
-    ExogeneousSequenceTools.main(args)
+    ExogenousSequenceTools.main(args)
 
 
 def _write_fasta(path: Path, records: list[tuple[str, str]]) -> None:
-    ExogeneousSequences.write_sequences_to_fasta(
+    ExogenousSequences.write_sequences_to_fasta(
         [r[0] for r in records],
         [r[1] for r in records],
         str(path),
@@ -81,7 +81,7 @@ def test_onehot_shape_n_4_l_channel_first(tmp_path: Path):
     )
     np.testing.assert_array_equal(arr[1], tgca)
 
-    es = ExogeneousSequences(str(fasta))
+    es = ExogenousSequences(str(fasta))
     try:
         raw = es.get_all_region_one_hot()
         np.testing.assert_array_equal(arr, raw.transpose(0, 2, 1))

@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 
 from GenomicElementTools.GenomicElementImport import GenomicElementImport
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from RGTools.ExogenousSequences import ExogenousSequences
 from RGTools.BedTable import BedTable3
 
 from tests._paths import FIXTURES_DIR
@@ -162,7 +162,7 @@ class GenomicElementImportTest(unittest.TestCase):
 
     def test_import_allele_expanded_es_with_stat(self):
         fasta_path = os.path.join(self.__wdir, "allele_expanded.fa")
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             seq_ids=[
                 "chr1_100_110_ref",
                 "chr1_100_110_105:A2G",
@@ -224,7 +224,7 @@ class GenomicElementImportTest(unittest.TestCase):
 
     def test_import_allele_expanded_es_invalid_fasta_header(self):
         fasta_path = os.path.join(self.__wdir, "invalid.fa")
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             seq_ids=["chr1:100-110"],
             sequences=["AAAAAAAAAA"],
             fasta_path=fasta_path,

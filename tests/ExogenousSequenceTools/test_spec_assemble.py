@@ -1,4 +1,4 @@
-"""SPEC017 contract tests: ExogeneousSequenceTools assemble operations."""
+"""SPEC017 contract tests: ExogenousSequenceTools assemble operations."""
 
 from __future__ import annotations
 
@@ -8,25 +8,25 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from ExogeneousSequenceTools import ExogeneousSequenceTools
-from ExogeneousSequenceTools.ExogeneousSequenceAssemble import ExogeneousSequenceAssemble
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from ExogenousSequenceTools import ExogenousSequenceTools
+from ExogenousSequenceTools.ExogenousSequenceAssemble import ExogenousSequenceAssemble
+from RGTools.ExogenousSequences import ExogenousSequences
 
 
 def _run_cli(argv: list[str]) -> None:
     parser = argparse.ArgumentParser()
-    ExogeneousSequenceTools.set_parser(parser)
+    ExogenousSequenceTools.set_parser(parser)
     args = parser.parse_args(argv)
-    ExogeneousSequenceTools.main(args)
+    ExogenousSequenceTools.main(args)
 
 
 def _write_fasta(path: Path, seq_ids: list[str], seqs: list[str]) -> Path:
-    ExogeneousSequences.write_sequences_to_fasta(seq_ids, seqs, str(path))
+    ExogenousSequences.write_sequences_to_fasta(seq_ids, seqs, str(path))
     return path
 
 
 def _read_fasta(path: Path) -> tuple[list[str], list[str]]:
-    es = ExogeneousSequences(str(path))
+    es = ExogenousSequences(str(path))
     return es.get_sequence_ids(), es.get_all_region_seqs()
 
 
@@ -171,7 +171,7 @@ def test_barcode_too_many_elements_raises(tmp_path: Path):
     meta = tmp_path / "meta.csv"
 
     with pytest.raises(ValueError):
-        ExogeneousSequenceAssemble.main(
+        ExogenousSequenceAssemble.main(
             argparse.Namespace(
                 operation="barcode",
                 barcode_fasta=str(barcodes),

@@ -1,4 +1,4 @@
-"""SPEC019 contract tests: ExogeneousSequenceTools signal/stat utilities."""
+"""SPEC019 contract tests: ExogenousSequenceTools signal/stat utilities."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ExogeneousSequenceTools.SignalTrack import SignalTrack
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from ExogenousSequenceTools.SignalTrack import SignalTrack
+from RGTools.ExogenousSequences import ExogenousSequences
 
 # Tiny track for dim-reduction: shape (2, 4)
 # row0: [1, 5, 2, 4] → max=5@1, min=1@0
@@ -28,7 +28,7 @@ def _ns(**kwargs) -> argparse.Namespace:
 
 
 def _write_fasta(path: Path, n: int = 3) -> Path:
-    ExogeneousSequences.write_sequences_to_fasta(
+    ExogenousSequences.write_sequences_to_fasta(
         [f"seq{i}" for i in range(n)],
         ["ATCG", "TTGA", "CCAT"][:n],
         str(path),

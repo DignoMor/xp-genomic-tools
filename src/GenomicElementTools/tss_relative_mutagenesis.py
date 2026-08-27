@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 from Bio.Data.IUPACData import ambiguous_dna_complement, ambiguous_dna_values
 
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from RGTools.ExogenousSequences import ExogenousSequences
 from RGTools.GenomicElements import GenomicElements
 from RGTools.TSSRelativeCoordinates import tss_relative_to_track_index
 
@@ -170,7 +170,7 @@ def _load_rounds(manifest_path: Path) -> list[RoundSpec]:
 
 
 def _load_targets(path: Path, *, round_id: str) -> list[TargetRecord]:
-    es = ExogeneousSequences(str(path))
+    es = ExogenousSequences(str(path))
     ids = list(es.get_sequence_ids())
     seqs = list(es.get_all_region_seqs())
     if not ids:

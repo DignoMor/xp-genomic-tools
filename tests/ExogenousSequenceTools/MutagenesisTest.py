@@ -5,8 +5,8 @@ import unittest
 
 import numpy as np
 
-from ExogeneousSequenceTools.Mutagenesis import Mutagenesis
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from ExogenousSequenceTools.Mutagenesis import Mutagenesis
+from RGTools.ExogenousSequences import ExogenousSequences
 
 
 class MutagenesisTest(unittest.TestCase):
@@ -28,13 +28,13 @@ class MutagenesisTest(unittest.TestCase):
             output_fasta=os.path.join(self.test_dir, "output.fasta"),
         )
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["seq1", "seq2", "seq3"],
             ["ATCG", "TTGA", "CCAT"],
             args.fasta,
         )
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["mut1", "mut2", "mut3"],
             ["C", "A", "T"],
             args.mut_fasta,
@@ -45,6 +45,6 @@ class MutagenesisTest(unittest.TestCase):
 
         Mutagenesis.mutagenesis_main(args)
 
-        output_es = ExogeneousSequences(args.output_fasta)
+        output_es = ExogenousSequences(args.output_fasta)
         self.assertEqual(output_es.get_region_bed_table().get_chrom_names()[1], "seq2_mut_mut2")
         self.assertEqual(output_es.get_all_region_seqs()[1], "TAGA")

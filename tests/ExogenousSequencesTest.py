@@ -7,12 +7,12 @@ import os
 import numpy as np
 from Bio import SeqIO
 
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from RGTools.ExogenousSequences import ExogenousSequences
 from RGTools.GenomicElements import GenomicElements
 
-class TestExogeneousSequences(unittest.TestCase):
+class TestExogenousSequences(unittest.TestCase):
     def setUp(self):
-        self.__wdir = "ExogeneousSequences_test"
+        self.__wdir = "ExogenousSequences_test"
 
         if not os.path.exists(self.__wdir):
             os.makedirs(self.__wdir)
@@ -32,7 +32,7 @@ class TestExogeneousSequences(unittest.TestCase):
             shutil.rmtree(self.__wdir)
 
     def test_get_region_bed_table(self):
-        es = ExogeneousSequences(self.__fasta_path)
+        es = ExogenousSequences(self.__fasta_path)
         bt = es.get_region_bed_table()
         bt.write(os.path.join(self.__wdir, "test.bed3"))
 
@@ -47,28 +47,28 @@ class TestExogeneousSequences(unittest.TestCase):
         self.assertEqual(seqs[0], "ACGTTTTCTG")
     
     def test_get_sequence_ids(self):
-        es = ExogeneousSequences(self.__fasta_path)
+        es = ExogenousSequences(self.__fasta_path)
         self.assertEqual(es.get_sequence_ids()[1], "chr1:123500-123512")
     
     def test_get_all_region_seqs(self):
-        es = ExogeneousSequences(self.__fasta_path)
+        es = ExogenousSequences(self.__fasta_path)
         self.assertEqual(es.get_all_region_seqs()[1], "GTGTAATTACAA")
         self.assertEqual(es.get_all_region_seqs()[2], "TGTAATTACA")
 
     def test_region_properties_and_lens(self):
-        es = ExogeneousSequences(self.__fasta_path)
+        es = ExogenousSequences(self.__fasta_path)
         self.assertEqual(es.region_file_type, "bed3")
         self.assertEqual(es.get_all_region_lens(), [10, 12, 10])
         with self.assertRaises(NotImplementedError):
             _ = es.region_file_path
 
     def test_get_all_region_one_hot_requires_homogeneous_lengths(self):
-        es = ExogeneousSequences(self.__fasta_path)
+        es = ExogenousSequences(self.__fasta_path)
         with self.assertRaises(ValueError):
             es.get_all_region_one_hot()
 
     def test_apply_logical_filter_copies_annotations(self):
-        es = ExogeneousSequences(self.__fasta_path)
+        es = ExogenousSequences(self.__fasta_path)
         stat = np.array([0.1, 0.6, 0.2])
         track = [
             np.arange(10),
@@ -105,7 +105,7 @@ class TestExogeneousSequences(unittest.TestCase):
         out_fa = os.path.join(self.__wdir, "written.fa")
         seq_ids = ["seqA", "seqB"]
         seqs = ["ACGT", "TTTT"]
-        ExogeneousSequences.write_sequences_to_fasta(seq_ids, seqs, out_fa)
+        ExogenousSequences.write_sequences_to_fasta(seq_ids, seqs, out_fa)
 
         with open(out_fa, "r") as handle:
             parsed = list(SeqIO.parse(handle, "fasta"))
@@ -113,7 +113,7 @@ class TestExogeneousSequences(unittest.TestCase):
         self.assertEqual([str(r.seq) for r in parsed], seqs)
 
     def test_get_track_list(self):
-        es = ExogeneousSequences(self.__fasta_path)
+        es = ExogenousSequences(self.__fasta_path)
         # Lengths are [10, 12, 10]
         track_list = [np.ones(10), np.zeros(12), np.ones(10) * 2]
         es.load_region_track_from_list("test_track", track_list)

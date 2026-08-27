@@ -2,7 +2,7 @@ import argparse
 
 import numpy as np
 
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from RGTools.ExogenousSequences import ExogenousSequences
 from RGTools.MemeMotif import MemeMotif
 from RGTools.utils import str2bool
 
@@ -11,7 +11,7 @@ from RGTools.utils import reverse_complement as RC
 class Motif:
     @staticmethod
     def set_parser_motif_search(parser: argparse.ArgumentParser):
-        ExogeneousSequences.set_parser_exogeneous_sequences(parser)
+        ExogenousSequences.set_parser_exogenous_sequences(parser)
 
         parser.add_argument("--motif_file", 
                             type=str,
@@ -39,7 +39,7 @@ class Motif:
 
     @staticmethod
     def motif_search_main(args: argparse.Namespace):
-        input_es = ExogeneousSequences(args.fasta)
+        input_es = ExogenousSequences(args.fasta)
         motif_dataset = MemeMotif(args.motif_file)
 
         seq_list = input_es.get_all_region_seqs()

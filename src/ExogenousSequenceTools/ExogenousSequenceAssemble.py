@@ -1,29 +1,29 @@
 
 import pandas as pd
 
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from RGTools.ExogenousSequences import ExogenousSequences
 
-class ExogeneousSequenceAssemble:
+class ExogenousSequenceAssemble:
     @staticmethod
     def set_parser(parser):
-        """Set up parser for exogeneous sequence assembly operations."""
+        """Set up parser for exogenous sequence assembly operations."""
         subparsers = parser.add_subparsers(dest="operation", required=True)
         
         parser_add_adapter = subparsers.add_parser("add_adapter", 
-                                                  help="Add adapter to the exogeneous sequences.")
-        ExogeneousSequenceAssemble._set_parser_add_adapter(parser_add_adapter)
+                                                  help="Add adapter to the exogenous sequences.")
+        ExogenousSequenceAssemble._set_parser_add_adapter(parser_add_adapter)
         
         parser_concat = subparsers.add_parser("concat", 
-                                             help="Concatenate the exogeneous sequences.")
-        ExogeneousSequenceAssemble._set_parser_concat(parser_concat)
+                                             help="Concatenate the exogenous sequences.")
+        ExogenousSequenceAssemble._set_parser_concat(parser_concat)
 
         parser_barcode = subparsers.add_parser("barcode", 
-                                               help="Add barcode to the exogeneous sequences.")
-        ExogeneousSequenceAssemble._set_parser_barcode(parser_barcode)
+                                               help="Add barcode to the exogenous sequences.")
+        ExogenousSequenceAssemble._set_parser_barcode(parser_barcode)
 
     @staticmethod
     def _set_parser_add_adapter(parser):
-        ExogeneousSequences.set_parser_exogeneous_sequences(parser)
+        ExogenousSequences.set_parser_exogenous_sequences(parser)
 
         parser.add_argument("--left_adapter_fasta", 
                             help="Path to the 5' adapter fasta file.",
@@ -101,7 +101,7 @@ class ExogeneousSequenceAssemble:
                             )
         
         parser.add_argument("--barcode_method",
-                            help="Method to use to add barcode to the exogeneous sequences.",
+                            help="Method to use to add barcode to the exogenous sequences.",
                             choices=["5", "3", "5_3"],
                             default="5_3",
                             )
@@ -109,7 +109,7 @@ class ExogeneousSequenceAssemble:
     @staticmethod
     def _add_adapter(args):
         if args.left_adapter_fasta:
-            left_adapter_seqs = ExogeneousSequences(args.left_adapter_fasta).get_all_region_seqs()
+            left_adapter_seqs = ExogenousSequences(args.left_adapter_fasta).get_all_region_seqs()
             if len(left_adapter_seqs) != 1:
                 raise ValueError("Left adapter fasta file must contain exactly one sequence.")
             left_adapter_seq = left_adapter_seqs[0]
@@ -117,26 +117,26 @@ class ExogeneousSequenceAssemble:
             left_adapter_seq = ""
 
         if args.right_adapter_fasta:
-            right_adapter_seqs = ExogeneousSequences(args.right_adapter_fasta).get_all_region_seqs()
+            right_adapter_seqs = ExogenousSequences(args.right_adapter_fasta).get_all_region_seqs()
             if len(right_adapter_seqs) != 1:
                 raise ValueError("Right adapter fasta file must contain exactly one sequence.")
             right_adapter_seq = right_adapter_seqs[0]
         else:
             right_adapter_seq = ""
 
-        input_es = ExogeneousSequences(args.fasta)
+        input_es = ExogenousSequences(args.fasta)
 
         output_seq_ids = input_es.get_region_bed_table().get_chrom_names()
         output_seqs = []
         for region_seq in input_es.get_all_region_seqs():
             output_seqs.append(left_adapter_seq + region_seq + right_adapter_seq)
 
-        ExogeneousSequences.write_sequences_to_fasta(output_seq_ids, output_seqs, args.output_fasta)
+        ExogenousSequences.write_sequences_to_fasta(output_seq_ids, output_seqs, args.output_fasta)
 
     @staticmethod
     def _concat(args):
-        fasta5_es = ExogeneousSequences(args.fasta5)
-        fasta3_es = ExogeneousSequences(args.fasta3)
+        fasta5_es = ExogenousSequences(args.fasta5)
+        fasta3_es = ExogenousSequences(args.fasta3)
 
         output_seqs = []
         output_seq_ids = []
@@ -158,13 +158,13 @@ class ExogeneousSequenceAssemble:
             output_seqs.append(oseq)
             output_seq_ids.append(oid)
 
-        ExogeneousSequences.write_sequences_to_fasta(output_seq_ids, output_seqs, args.output_fasta)
+        ExogenousSequences.write_sequences_to_fasta(output_seq_ids, output_seqs, args.output_fasta)
 
     @staticmethod
     def _barcode(args):
-        barcode_es = ExogeneousSequences(args.barcode_fasta)
+        barcode_es = ExogenousSequences(args.barcode_fasta)
 
-        input_es_list = [ExogeneousSequences(f) for f in args.input_fasta]
+        input_es_list = [ExogenousSequences(f) for f in args.input_fasta]
         input_elem_nums = [es.get_num_regions() for es in input_es_list]
         barcode_seqs = barcode_es.get_all_region_seqs()
 
@@ -208,7 +208,7 @@ class ExogeneousSequenceAssemble:
         else:
             raise ValueError(f"Invalid fasta id type: {args.fasta_id_type}")
         
-        ExogeneousSequences.write_sequences_to_fasta(fasta_ids, 
+        ExogenousSequences.write_sequences_to_fasta(fasta_ids, 
                                                      output_seqs, 
                                                      args.output_fasta, 
                                                      )
@@ -219,10 +219,10 @@ class ExogeneousSequenceAssemble:
     @staticmethod
     def main(args):
         if args.operation == "add_adapter":
-            ExogeneousSequenceAssemble._add_adapter(args)
+            ExogenousSequenceAssemble._add_adapter(args)
         elif args.operation == "concat":
-            ExogeneousSequenceAssemble._concat(args)
+            ExogenousSequenceAssemble._concat(args)
         elif args.operation == "barcode":
-            ExogeneousSequenceAssemble._barcode(args)
+            ExogenousSequenceAssemble._barcode(args)
         else:
             raise ValueError(f"Unknown operation: {args.operation}")

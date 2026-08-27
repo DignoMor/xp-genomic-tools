@@ -48,10 +48,10 @@ class TestGenomicElements(unittest.TestCase):
         encoding = GenomicElements.one_hot_encoding("ACGT")
         self.assertTrue((encoding == np.array([[1,0,0,0], [0,1,0,0], [0,0,1,0], [0,0,0,1]])).all())
     
-    def test_export_exogeneous_sequences(self):
+    def test_export_exogenous_sequences(self):
         self._require_hg38()
         ge = self._init_GenomicElements()
-        ge.export_exogeneous_sequences(os.path.join(self.__wdir, "test.fa"))
+        ge.export_exogenous_sequences(os.path.join(self.__wdir, "test.fa"))
 
         with open(os.path.join(self.__wdir, "test.fa"), "r") as handle:
             lines = handle.readlines()

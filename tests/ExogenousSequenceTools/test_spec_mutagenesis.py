@@ -1,4 +1,4 @@
-"""SPEC018 contract tests: ExogeneousSequenceTools mutagenesis."""
+"""SPEC018 contract tests: ExogenousSequenceTools mutagenesis."""
 
 from __future__ import annotations
 
@@ -7,13 +7,13 @@ from pathlib import Path
 
 import numpy as np
 
-from ExogeneousSequenceTools.Mutagenesis import Mutagenesis
-from ExogeneousSequenceTools.cli import ExogeneousSequenceTools
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from ExogenousSequenceTools.Mutagenesis import Mutagenesis
+from ExogenousSequenceTools.cli import ExogenousSequenceTools
+from RGTools.ExogenousSequences import ExogenousSequences
 
 
 def _write_fasta(path: Path, ids: list[str], seqs: list[str]) -> Path:
-    ExogeneousSequences.write_sequences_to_fasta(ids, seqs, str(path))
+    ExogenousSequences.write_sequences_to_fasta(ids, seqs, str(path))
     return path
 
 
@@ -41,7 +41,7 @@ def _run_via_dispatcher(
     mut_fasta: Path,
     output_fasta: Path,
 ) -> None:
-    """Invoke via ExogeneousSequenceTools.main (CLI dispatcher)."""
+    """Invoke via ExogenousSequenceTools.main (CLI dispatcher)."""
     args = argparse.Namespace(
         subcommand="mutagenesis",
         fasta=str(fasta),
@@ -49,11 +49,11 @@ def _run_via_dispatcher(
         mut_fasta=str(mut_fasta),
         output_fasta=str(output_fasta),
     )
-    ExogeneousSequenceTools.main(args)
+    ExogenousSequenceTools.main(args)
 
 
 def _load_output(output_fasta: Path) -> tuple[list[str], list[str]]:
-    es = ExogeneousSequences(str(output_fasta))
+    es = ExogenousSequences(str(output_fasta))
     ids = list(es.get_region_bed_table().get_chrom_names())
     seqs = list(es.get_all_region_seqs())
     return ids, seqs
@@ -171,7 +171,7 @@ def test_broadcast_output_count_and_order(tmp_path: Path):
 
 
 def test_broadcast_via_cli_dispatcher(tmp_path: Path):
-    """Broadcast path reachable through ExogeneousSequenceTools.main."""
+    """Broadcast path reachable through ExogenousSequenceTools.main."""
     fasta = _write_fasta(tmp_path / "input.fa", ["e0"], ["GGGG"])
     mut_fasta = _write_fasta(
         tmp_path / "mut.fa",

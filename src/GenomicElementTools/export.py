@@ -3,7 +3,7 @@ import warnings
 import sys
 
 from RGTools.GenomicElements import GenomicElements
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from RGTools.ExogenousSequences import ExogenousSequences
 from RGTools.BedTable import BedTable6Plus
 from RGTools.SNP_utils import EnsemblRestSearch
 from RGTools.utils import str2bool
@@ -24,19 +24,19 @@ class GenomicElementExport:
                                                 )
         GenomicElementExport.set_parser_stat_list(parser_stat_list)
 
-        parser_exogeneous_sequences = subparsers.add_parser("ExogeneousSequences", 
-                                                          help="Export exogeneous sequences.",
+        parser_exogenous_sequences = subparsers.add_parser("ExogenousSequences", 
+                                                          help="Export exogenous sequences.",
                                                           )
-        GenomicElementExport.set_parser_exogeneous_sequences(parser_exogeneous_sequences)
+        GenomicElementExport.set_parser_exogenous_sequences(parser_exogenous_sequences)
 
         parser_wtes = subparsers.add_parser("WTES",
-                                            help="Export wild type exogeneous sequences.",
+                                            help="Export wild type exogenous sequences.",
                                             )
         GenomicElementExport.set_parser_wtes(parser_wtes)
 
         parser_allele_expanded_es = subparsers.add_parser(
             "allele_expanded_ES",
-            help="Export TRE-centered reference and allele-expanded exogeneous sequences.",
+            help="Export TRE-centered reference and allele-expanded exogenous sequences.",
         )
         GenomicElementExport.set_parser_allele_expanded_es(parser_allele_expanded_es)
 
@@ -76,7 +76,7 @@ class GenomicElementExport:
         GenomicElementExport.set_parser_bed6poly(parser_bed6poly)
 
     @staticmethod
-    def set_parser_exogeneous_sequences(parser):
+    def set_parser_exogenous_sequences(parser):
         GenomicElements.set_parser_genome(parser)
         GenomicElements.set_parser_genomic_element_region(parser)
         parser.add_argument("--opath", 
@@ -376,7 +376,7 @@ class GenomicElementExport:
 
     @staticmethod
     def get_oformat_options():
-        return ["stat_list", "ExogeneousSequences", "WTES", "allele_expanded_ES", "CountTable", "Heatmap", "ChromFilteredGE", "MaskedGE", "TREbed", "MergedGE", "bed6poly"]
+        return ["stat_list", "ExogenousSequences", "WTES", "allele_expanded_ES", "CountTable", "Heatmap", "ChromFilteredGE", "MaskedGE", "TREbed", "MergedGE", "bed6poly"]
 
     @staticmethod
     def export_stat_list(args):
@@ -397,12 +397,12 @@ class GenomicElementExport:
                 output_handle.close()
 
     @staticmethod
-    def export_exogeneous_sequences(args):
+    def export_exogenous_sequences(args):
         ge = GenomicElements(args.region_file_path, 
                              args.region_file_type, 
                              args.fasta_path, 
                              )
-        ge.export_exogeneous_sequences(args.opath)
+        ge.export_exogenous_sequences(args.opath)
 
     @staticmethod
     def export_wtes(args):
@@ -423,7 +423,7 @@ class GenomicElementExport:
                 seq_ids.append(f"{region['chrom']}:{region['start']}-{region['end']}_{ind}")
                 seqs.append(seq)
 
-        ExogeneousSequences.write_sequences_to_fasta(seq_ids, seqs, args.opath)
+        ExogenousSequences.write_sequences_to_fasta(seq_ids, seqs, args.opath)
 
     @staticmethod
     def export_allele_expanded_es(args):
@@ -477,7 +477,7 @@ class GenomicElementExport:
                     )
                     output_sequences.append(mutated_seq)
 
-        ExogeneousSequences.write_sequences_to_fasta(output_seq_ids, output_sequences, args.opath)
+        ExogenousSequences.write_sequences_to_fasta(output_seq_ids, output_sequences, args.opath)
 
     @staticmethod
     def region2region_id(region, region_id_type):
@@ -977,8 +977,8 @@ class GenomicElementExport:
     def main(args):
         if args.oformat == "stat_list":
             GenomicElementExport.export_stat_list(args)
-        elif args.oformat == "ExogeneousSequences":
-            GenomicElementExport.export_exogeneous_sequences(args)
+        elif args.oformat == "ExogenousSequences":
+            GenomicElementExport.export_exogenous_sequences(args)
         elif args.oformat == "WTES":
             GenomicElementExport.export_wtes(args)
         elif args.oformat == "allele_expanded_ES":

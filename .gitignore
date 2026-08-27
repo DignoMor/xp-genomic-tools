@@ -13,7 +13,7 @@ venv/
 # Test scratch dirs (created under cwd when running tests)
 bedTableTest_temp_data/
 MemeMotif_test/
-ExogeneousSequences_test/
+ExogenousSequences_test/
 GenomicElement_test/
 .pytest_cache/
 

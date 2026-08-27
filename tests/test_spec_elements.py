@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from RGTools import ExogeneousSequences, GenomicElements
+from RGTools import ExogenousSequences, GenomicElements
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "spec"
 TINY_FA = FIXTURES / "tiny.fa"
@@ -79,12 +79,12 @@ def test_filter_keeps_annotation_alignment(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# ExogeneousSequences
+# ExogenousSequences
 # ---------------------------------------------------------------------------
 
 
-def test_exogeneous_sequences_synthetic_bed3_view():
-    es = ExogeneousSequences(str(TINY_FA))
+def test_exogenous_sequences_synthetic_bed3_view():
+    es = ExogenousSequences(str(TINY_FA))
     try:
         assert es.region_file_type == "bed3"
         assert es.get_sequence_ids().tolist() == ["chrA", "chrB"]
@@ -98,8 +98,8 @@ def test_exogeneous_sequences_synthetic_bed3_view():
         es.close()
 
 
-def test_exogeneous_sequences_region_file_path_not_implemented():
-    es = ExogeneousSequences(str(TINY_FA))
+def test_exogenous_sequences_region_file_path_not_implemented():
+    es = ExogenousSequences(str(TINY_FA))
     try:
         with pytest.raises(NotImplementedError):
             _ = es.region_file_path
@@ -253,15 +253,15 @@ def test_bulk_one_hot_rejects_heterogeneous_lengths(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# export_exogeneous_sequences
+# export_exogenous_sequences
 # ---------------------------------------------------------------------------
 
 
-def test_export_exogeneous_sequences_header_and_refuse_existing(tmp_path):
+def test_export_exogenous_sequences_header_and_refuse_existing(tmp_path):
     ge = GenomicElements(str(REGIONS_BED3), "bed3", str(TINY_FA))
     try:
         out = tmp_path / "exported.fa"
-        ge.export_exogeneous_sequences(str(out))
+        ge.export_exogenous_sequences(str(out))
         text = out.read_text()
         assert ">chrB:1-5\n" in text
         assert ">chrA:0-4\n" in text
@@ -269,7 +269,7 @@ def test_export_exogeneous_sequences_header_and_refuse_existing(tmp_path):
         assert "ACGT" in text
 
         with pytest.raises(ValueError, match="already exists"):
-            ge.export_exogeneous_sequences(str(out))
+            ge.export_exogenous_sequences(str(out))
     finally:
         ge.close()
 

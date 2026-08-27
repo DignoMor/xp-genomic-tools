@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 import numpy as np
 
-from ExogeneousSequenceTools.SignalTrack import SignalTrack
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from ExogenousSequenceTools.SignalTrack import SignalTrack
+from RGTools.ExogenousSequences import ExogenousSequences
 
 
 class SignalTrackTest(unittest.TestCase):
@@ -113,7 +113,7 @@ class SignalTrackTest(unittest.TestCase):
         )
         args.operation = "single_loc"
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["seq1", "seq2", "seq3"],
             ["ATCG", "TTGA", "CCAT"],
             args.fasta,

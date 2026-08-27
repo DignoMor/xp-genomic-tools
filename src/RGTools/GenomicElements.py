@@ -253,12 +253,12 @@ class GenomicElements(GeneralElements):
 
         return result_ge
 
-    def export_exogeneous_sequences(self, fasta_path):
+    def export_exogenous_sequences(self, fasta_path):
         '''
-        Export regions as exogeneous sequences.
+        Export regions as exogenous sequences.
 
         Keyword arguments:
-        - fasta_path: Path to save the exogeneous sequences.
+        - fasta_path: Path to save the exogenous sequences.
 
         Returns:
         - None

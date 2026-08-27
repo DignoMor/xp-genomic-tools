@@ -1,7 +1,7 @@
 # RGTools / xp-genomic-tools
 
 Pip-installable library (`RGTools`) and CLIs (`GenomicElementTools`,
-`ExogeneousSequenceTools`) for regulatory genomic data (BED-like regions,
+`ExogenousSequenceTools`) for regulatory genomic data (BED-like regions,
 sequences, motifs, BigWig tracks). Part of **xp-genomic-tools**.
 
 ## Install
@@ -17,7 +17,7 @@ Then:
 ```python
 from RGTools import BedTable3, GenomicElements, MemeMotif, ListFile, SingleBwTrack
 from GenomicElementTools.cli import GenomicElementTools
-from ExogeneousSequenceTools.cli import ExogeneousSequenceTools
+from ExogenousSequenceTools.cli import ExogenousSequenceTools
 ```
 
 ## CLI
@@ -42,15 +42,15 @@ Subcommands include `count_single_bw`, `count_paired_bw`, `pad_region`,
 `export`, `import`, `get_context_ge`, `mask_op`, and
 `select_tss_relative_track`.
 
-### ExogeneousSequenceTools
+### ExogenousSequenceTools
 
 ```bash
-ExogeneousSequenceTools --help
-ExogeneousSequenceTools assemble --help
+ExogenousSequenceTools --help
+ExogenousSequenceTools assemble --help
 ```
 
 ```bash
-python -m ExogeneousSequenceTools --help
+python -m ExogenousSequenceTools --help
 ```
 
 Subcommands include `assemble`, `track_dim_reduction`, `mutagenesis`,
@@ -62,7 +62,7 @@ Subcommands include `assemble`, `track_dim_reduction`, `mutagenesis`,
 code/
   src/RGTools/                   # library package
   src/GenomicElementTools/       # GenomicElementTools CLI package
-  src/ExogeneousSequenceTools/   # ExogeneousSequenceTools CLI package
+  src/ExogenousSequenceTools/   # ExogenousSequenceTools CLI package
   tests/                         # unit tests (separate from this package tree)
   pyproject.toml
 ```
@@ -89,7 +89,7 @@ skip them.
 - **`__init__.py` exports**: Legacy listed submodule names in `__all__` without
   binding them (they were imported as `*_mod` aliases). Non-conflicting
   submodules (`BedTable`, `BwTrack`, `utils`, …) are now bound. Where a class
-  shares its module name (`GenomicElements`, `ExogeneousSequences`, `MemeMotif`,
+  shares its module name (`GenomicElements`, `ExogenousSequences`, `MemeMotif`,
   `ListFile`), the **class** is bound at package level; import the module as
   `import RGTools.GenomicElements` if needed.
 - **Dependencies**: Flexible minimum pins (`>=`) instead of exact pins; Python
@@ -98,6 +98,6 @@ skip them.
   `matplotlib` is a declared dependency (needed by `GenomicElementTools export Heatmap`).
 - **CLI packaging**: Legacy `GenomicElementTool` / `ExogeneousSequenceTool`
   (flat scripts + RGTools submodule) are packaged as `GenomicElementTools` /
-  `ExogeneousSequenceTools` under `src/` with relative imports and console-script
+  `ExogenousSequenceTools` under `src/` with relative imports and console-script
   entrypoints. `CountTableTools` is not registered yet.
 - **Not ported here**: legacy `doc/` and `scripts/` from RGTools.
