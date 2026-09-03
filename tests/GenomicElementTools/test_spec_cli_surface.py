@@ -109,6 +109,9 @@ def test_tss_relative_mutagenesis_exposes_bundle_flags():
         "--write_replaced_windows"
     ]
     assert by_dest["force"].option_strings == ["--force"]
+    assert by_dest["output_orientation"].option_strings == ["--output_orientation"]
+    assert by_dest["output_orientation"].choices == ["genomic", "strand"]
+    assert by_dest["output_orientation"].default == "genomic"
     option_strings = {
         flag for a in parser._actions for flag in a.option_strings
     }
@@ -120,4 +123,5 @@ def test_tss_relative_mutagenesis_exposes_bundle_flags():
         "--output_dir",
         "--write_replaced_windows",
         "--force",
+        "--output_orientation",
     }.issubset(option_strings)
