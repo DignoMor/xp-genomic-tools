@@ -10,16 +10,15 @@ from .BedTable import BedTable3
 
 class ExogenousSequences(GeneralElements):
     '''
-    Class for Exogenous sequences.
+    Class for exogenous sequence collections.
 
-    This class inherits from GeneralElements and provides
-    functionality for handling exogenous sequences (sequences
-    that are not part of a reference genome).
+    An exogenous sequence collection holds nucleotide sequences
+    represented independently of a genome assembly and without
+    genomic coordinates. Sequence origin and potential mappability
+    do not determine membership.
 
-    Usually exogenous sequences are small sets 
-    of sequences compared to reference genome. 
-    As a result this class read sequences into 
-    memory for further analysis.
+    Collections are typically small enough to load into memory for
+    further analysis.
     '''
     def __init__(self, fasta_path):
         '''
