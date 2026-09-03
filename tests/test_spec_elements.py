@@ -357,6 +357,246 @@ def test_export_exogenous_sequences_validates_bedgraph_schema(tmp_path):
         ge.close()
 
 
+def test_export_exogenous_default_matches_explicit_genomic_coordinate(tmp_path):
+    """Omitting modes matches explicit genomic+coordinate (SPEC005 / #13)."""
+    ge = GenomicElements(str(REGIONS_BED3), "bed3", str(TINY_FA))
+    try:
+        default_out = tmp_path / "default.fa"
+        explicit_out = tmp_path / "explicit.fa"
+        ge.export_exogenous_sequences(str(default_out))
+        ge.export_exogenous_sequences(
+            str(explicit_out),
+            output_orientation="genomic",
+            record_id="coordinate",
+        )
+        assert default_out.read_bytes() == explicit_out.read_bytes()
+        assert default_out.read_text() == ">chrB:1-5\nGGGC\n>chrA:0-4\nACGT\n"
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_strand_orientation_plus_and_minus(tmp_path):
+    """Strand mode keeps + sequences and reverse-complements - (SPEC005 / #13)."""
+    bed6 = tmp_path / "mixed.bed6"
+    bed6.write_text(
+        "chrA\t0\t4\tr_plus\t1\t+\n"
+        "chrB\t0\t4\tr_minus\t1\t-\n"
+    )
+    ge = GenomicElements(str(bed6), "bed6", str(TINY_FA))
+    try:
+        out = tmp_path / "strand.fa"
+        ge.export_exogenous_sequences(str(out), output_orientation="strand")
+        assert out.read_text() == (
+            ">chrA:0-4\nACGT\n"
+            ">chrB:0-4\nCCCC\n"
+        )
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_genomic_ignores_invalid_strand(tmp_path):
+    """Genomic orientation ignores unused strand values including '.' (SPEC005 / #13)."""
+    bed6 = tmp_path / "dot.bed6"
+    bed6.write_text("chrA\t0\t4\tr_dot\t1\t.\n")
+    ge = GenomicElements(str(bed6), "bed6", str(TINY_FA))
+    try:
+        out = tmp_path / "genomic.fa"
+        ge.export_exogenous_sequences(str(out), output_orientation="genomic")
+        assert out.read_text() == ">chrA:0-4\nACGT\n"
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_strand_rejects_dot_strand(tmp_path):
+    """Strand orientation rejects '.' / missing strand before publish (SPEC005 / #13)."""
+    bed6 = tmp_path / "dot.bed6"
+    bed6.write_text("chrA\t0\t4\tr_dot\t1\t.\n")
+    out = tmp_path / "out.fa"
+    ge = GenomicElements(str(bed6), "bed6", str(TINY_FA))
+    try:
+        with pytest.raises(ValueError, match="strand"):
+            ge.export_exogenous_sequences(str(out), output_orientation="strand")
+        assert not out.exists()
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_strand_rejects_strandless_schema(tmp_path):
+    """Strand orientation rejects schemas without row-level strand (SPEC005 / #13)."""
+    out = tmp_path / "out.fa"
+    ge = GenomicElements(str(REGIONS_BED3), "bed3", str(TINY_FA))
+    try:
+        with pytest.raises(ValueError, match="strand"):
+            ge.export_exogenous_sequences(str(out), output_orientation="strand")
+        assert not out.exists()
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_record_id_name_preserves_order(tmp_path):
+    """Name identity preserves names and row order (SPEC005 / #13)."""
+    bed6 = tmp_path / "named.bed6"
+    bed6.write_text(
+        "chrA\t0\t4\tpeakA\t1\t+\n"
+        "chrB\t0\t4\tpeakB\t1\t-\n"
+    )
+    ge = GenomicElements(str(bed6), "bed6", str(TINY_FA))
+    try:
+        out = tmp_path / "named.fa"
+        ge.export_exogenous_sequences(
+            str(out),
+            output_orientation="strand",
+            record_id="name",
+        )
+        assert out.read_text() == (
+            ">peakA\nACGT\n"
+            ">peakB\nCCCC\n"
+        )
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_name_without_strand_ok(tmp_path):
+    """Name identity works on TREbed without requiring strand (SPEC005 / #13)."""
+    tre = tmp_path / "regions.trebed"
+    tre.write_text("chrA\t0\t4\tentityA\t0\t-1\n")
+    ge = GenomicElements(str(tre), "TREbed", str(TINY_FA))
+    try:
+        out = tmp_path / "named.fa"
+        ge.export_exogenous_sequences(str(out), record_id="name")
+        assert out.read_text() == ">entityA\nACGT\n"
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_rejects_duplicate_coordinate_ids(tmp_path):
+    """Coordinate identity rejects duplicate chrom:start-end IDs (SPEC005 / #13)."""
+    bed = tmp_path / "dup.bed3"
+    bed.write_text("chrA\t0\t4\nchrA\t0\t4\n")
+    out = tmp_path / "out.fa"
+    ge = GenomicElements(str(bed), "bed3", str(TINY_FA))
+    try:
+        with pytest.raises(ValueError, match="Duplicate"):
+            ge.export_exogenous_sequences(str(out))
+        assert not out.exists()
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_rejects_duplicate_names(tmp_path):
+    """Name identity rejects exact duplicate names (SPEC005 / #13)."""
+    bed6 = tmp_path / "dup.bed6"
+    bed6.write_text(
+        "chrA\t0\t4\tsame\t1\t+\n"
+        "chrB\t0\t4\tsame\t1\t-\n"
+    )
+    out = tmp_path / "out.fa"
+    ge = GenomicElements(str(bed6), "bed6", str(TINY_FA))
+    try:
+        with pytest.raises(ValueError, match="Duplicate"):
+            ge.export_exogenous_sequences(str(out), record_id="name")
+        assert not out.exists()
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_strand_rejects_non_iupac(tmp_path):
+    """Strand mode rejects non-IUPAC symbols on + and - rows (SPEC005 / #13)."""
+    fa = tmp_path / "bad.fa"
+    fa.write_text(">chrZ\nACGTZACG\n")
+    out = tmp_path / "out.fa"
+
+    for strand in ("+", "-"):
+        bed6 = tmp_path / f"{strand}.bed6"
+        bed6.write_text(f"chrZ\t0\t8\tr1\t1\t{strand}\n")
+        ge = GenomicElements(str(bed6), "bed6", str(fa))
+        try:
+            with pytest.raises(ValueError, match="[Nn]on-IUPAC|non-IUPAC"):
+                ge.export_exogenous_sequences(str(out), output_orientation="strand")
+            assert not out.exists()
+        finally:
+            ge.close()
+
+
+def test_export_exogenous_iupac_case_preserving_reverse_complement(tmp_path):
+    """Minus-strand reverse complement preserves case for IUPAC bases (SPEC005 / #13)."""
+    fa = tmp_path / "iupac.fa"
+    fa.write_text(">chrZ\nACgt\n")
+    bed6 = tmp_path / "minus.bed6"
+    bed6.write_text("chrZ\t0\t4\tr1\t1\t-\n")
+    ge = GenomicElements(str(bed6), "bed6", str(fa))
+    try:
+        out = tmp_path / "out.fa"
+        ge.export_exogenous_sequences(str(out), output_orientation="strand")
+        assert out.read_text() == ">chrZ:0-4\nacGT\n"
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_rejects_invalid_names(tmp_path):
+    """Name identity rejects '.', whitespace, and similar invalid names (SPEC005 / #13)."""
+    cases = [
+        ("chrA\t0\t4\t.\t1\t+\n", "name"),
+        ("chrA\t0\t4\tbad name\t1\t+\n", "Invalid record name"),
+    ]
+    for row, match in cases:
+        bed6 = tmp_path / "bad.bed6"
+        bed6.write_text(row)
+        out = tmp_path / "out.fa"
+        ge = GenomicElements(str(bed6), "bed6", str(TINY_FA))
+        try:
+            with pytest.raises(ValueError, match=match):
+                ge.export_exogenous_sequences(str(out), record_id="name")
+            assert not out.exists()
+        finally:
+            ge.close()
+
+
+@pytest.mark.parametrize(
+    "region_file_type,row",
+    [
+        ("bed6", "chrA\t0\t4\tpeakA\t1\t+\n"),
+        ("bed6gene", "chrA\t0\t4\tpeakA\t1\t+\tGENEA\n"),
+        ("narrowPeak", "chrA\t0\t4\tpeakA\t1\t+\t1.0\t-1.0\t-1.0\t0\n"),
+    ],
+)
+def test_export_exogenous_strand_capable_schemas(tmp_path, region_file_type, row):
+    """Every strand-capable registered schema accepts strand orientation (SPEC005 / #13)."""
+    path = tmp_path / f"regions.{region_file_type}"
+    path.write_text(row)
+    ge = GenomicElements(str(path), region_file_type, str(TINY_FA))
+    try:
+        out = tmp_path / "out.fa"
+        ge.export_exogenous_sequences(str(out), output_orientation="strand")
+        assert out.read_text() == ">chrA:0-4\nACGT\n"
+    finally:
+        ge.close()
+
+
+@pytest.mark.parametrize(
+    "region_file_type,row,expected_id",
+    [
+        ("bed6", "chrA\t0\t4\tpeakA\t1\t+\n", "peakA"),
+        ("bed6gene", "chrA\t0\t4\tpeakA\t1\t+\tGENEA\n", "peakA"),
+        ("narrowPeak", "chrA\t0\t4\tpeakA\t1\t+\t1.0\t-1.0\t-1.0\t0\n", "peakA"),
+        ("TREbed", "chrA\t0\t4\tpeakA\t0\t-1\n", "peakA"),
+    ],
+)
+def test_export_exogenous_name_capable_schemas(
+    tmp_path, region_file_type, row, expected_id
+):
+    """Every name-capable registered schema accepts name identity (SPEC005 / #13)."""
+    path = tmp_path / f"regions.{region_file_type}"
+    path.write_text(row)
+    ge = GenomicElements(str(path), region_file_type, str(TINY_FA))
+    try:
+        out = tmp_path / "out.fa"
+        ge.export_exogenous_sequences(str(out), record_id="name")
+        assert out.read_text() == f">{expected_id}\nACGT\n"
+    finally:
+        ge.close()
+
+
 # ---------------------------------------------------------------------------
 # Registered region types beyond bed3
 # ---------------------------------------------------------------------------

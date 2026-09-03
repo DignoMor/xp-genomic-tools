@@ -4,7 +4,9 @@ import os
 import numpy as np
 
 from .BedTable import BedTable3, BedTable6, BedTable6Plus, BedTable3Plus
+from .ExogenousSequences import ExogenousSequences
 from .GeneralElements import GeneralElements
+from .utils import reverse_complement_iupac, validate_iupac_dna
 
 class GenomicElements(GeneralElements):
     '''
@@ -253,21 +255,55 @@ class GenomicElements(GeneralElements):
 
         return result_ge
 
-    def export_exogenous_sequences(self, fasta_path):
+    def export_exogenous_sequences(
+        self,
+        fasta_path,
+        *,
+        output_orientation="genomic",
+        record_id="coordinate",
+    ):
         '''
         Export regions as exogenous sequences.
 
         Keyword arguments:
         - fasta_path: Path to save the exogenous sequences.
+        - output_orientation: 'genomic' (default) or 'strand'.
+        - record_id: 'coordinate' (default) or 'name'.
 
         Returns:
         - None
         '''
+        if output_orientation not in ("genomic", "strand"):
+            raise ValueError(
+                "output_orientation must be 'genomic' or 'strand', "
+                f"got {output_orientation!r}."
+            )
+        if record_id not in ("coordinate", "name"):
+            raise ValueError(
+                "record_id must be 'coordinate' or 'name', "
+                f"got {record_id!r}."
+            )
         if os.path.exists(fasta_path):
             raise ValueError(f"File {fasta_path} already exists.")
 
+        region_bt = self.get_region_bed_table()
+        fields = set(region_bt.column_names)
+        has_strand = "strand" in fields
+        has_name = "name" in fields
+
+        if output_orientation == "strand" and not has_strand:
+            raise ValueError(
+                "output_orientation 'strand' requires a region schema with "
+                "a row-level strand field."
+            )
+        if record_id == "name" and not has_name:
+            raise ValueError(
+                "record_id 'name' requires a region schema with "
+                "a row-level name field."
+            )
+
         genome_index = self._get_genome_index()
-        regions = list(self.get_region_bed_table().iter_regions())
+        regions = list(region_bt.iter_regions())
         for region in regions:
             chrom = region["chrom"]
             start = region["start"]
@@ -285,13 +321,53 @@ class GenomicElements(GeneralElements):
                     f"chromosome {chrom} of length {chrom_len}."
                 )
 
-        with open(fasta_path, "w") as handle:
-            for region in regions:
-                chrom = region["chrom"]
-                start = region["start"]
-                end = region["end"]
-                seq = str(genome_index[chrom].seq[start:end])
-                handle.write(f">{chrom}:{start}-{end}\n{seq}\n")
+        seq_ids = []
+        sequences = []
+        seen_ids = set()
+
+        for region in regions:
+            chrom = region["chrom"]
+            start = region["start"]
+            end = region["end"]
+            locus = f"{chrom}:{start}-{end}"
+            seq = str(genome_index[chrom].seq[start:end])
+
+            if output_orientation == "strand":
+                strand = region["strand"]
+                if strand not in ("+", "-"):
+                    raise ValueError(
+                        "output_orientation 'strand' requires strand '+' or '-', "
+                        f"got {strand!r} for region {locus}."
+                    )
+                validate_iupac_dna(seq)
+                if strand == "-":
+                    seq = reverse_complement_iupac(seq)
+
+            if record_id == "coordinate":
+                record = locus
+            else:
+                name = region["name"]
+                if name is None or (isinstance(name, float) and np.isnan(name)):
+                    raise ValueError(
+                        f"record_id 'name' requires a nonempty name for "
+                        f"region {locus}."
+                    )
+                record = str(name)
+                if record == "" or record == "." or any(ch.isspace() for ch in record):
+                    raise ValueError(
+                        f"Invalid record name {record!r} for region {locus}."
+                    )
+
+            if record in seen_ids:
+                raise ValueError(
+                    f"Duplicate FASTA record ID {record!r} under "
+                    f"record_id={record_id!r}."
+                )
+            seen_ids.add(record)
+            seq_ids.append(record)
+            sequences.append(seq)
+
+        ExogenousSequences.write_sequences_to_fasta(seq_ids, sequences, fasta_path)
 
     def get_all_region_seqs(self):
         '''

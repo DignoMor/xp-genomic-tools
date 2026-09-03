@@ -1,5 +1,6 @@
 
 import os
+import tempfile
 
 import pandas as pd
 
@@ -168,9 +169,30 @@ class ExogenousSequences(GeneralElements):
         '''
         if os.path.exists(fasta_path):
             raise ValueError(f"File {fasta_path} already exists.")
-        
-        with open(fasta_path, "w") as f:
-            for seq_id, seq in zip(seq_ids, sequences):
-                f.write(f">{seq_id}\n{seq}\n")
+
+        parent = os.path.dirname(os.path.abspath(fasta_path)) or "."
+        fd = None
+        tmp_path = None
+        try:
+            fd, tmp_path = tempfile.mkstemp(
+                prefix=f".{os.path.basename(fasta_path)}.",
+                suffix=".tmp",
+                dir=parent,
+                text=True,
+            )
+            with os.fdopen(fd, "w") as handle:
+                fd = None
+                for seq_id, seq in zip(seq_ids, sequences):
+                    handle.write(f">{seq_id}\n{seq}\n")
+            os.replace(tmp_path, fasta_path)
+            tmp_path = None
+        finally:
+            if fd is not None:
+                os.close(fd)
+            if tmp_path is not None:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
 

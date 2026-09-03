@@ -49,6 +49,41 @@ def reverse_complement(seq, mapping = {"A": "T",
     '''
     return "".join([mapping[base] for base in seq[::-1]])
 
+
+def reverse_complement_iupac(seq: str) -> str:
+    '''
+    Reverse-complement IUPAC DNA while preserving input case.
+
+    Raises ValueError for any non-IUPAC symbol.
+    '''
+    from Bio.Data.IUPACData import ambiguous_dna_complement
+
+    complement_map = {
+        **ambiguous_dna_complement,
+        **{k.lower(): v.lower() for k, v in ambiguous_dna_complement.items()},
+    }
+    try:
+        return "".join(complement_map[base] for base in reversed(seq))
+    except KeyError as exc:
+        raise ValueError(
+            f"Cannot reverse-complement non-IUPAC base {exc.args[0]!r}."
+        ) from exc
+
+
+def validate_iupac_dna(seq: str) -> None:
+    '''
+    Raise ValueError if ``seq`` contains any non-IUPAC DNA symbol.
+    '''
+    from Bio.Data.IUPACData import ambiguous_dna_complement
+
+    allowed = set(ambiguous_dna_complement) | {
+        k.lower() for k in ambiguous_dna_complement
+    }
+    for base in seq:
+        if base not in allowed:
+            raise ValueError(f"Non-IUPAC DNA base {base!r}.")
+
+
 class NumpyEncoder(json.JSONEncoder):
     '''
     Helper class to encode data with numpy arrays for json serialization.

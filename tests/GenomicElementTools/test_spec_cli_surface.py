@@ -125,3 +125,20 @@ def test_tss_relative_mutagenesis_exposes_bundle_flags():
         "--force",
         "--output_orientation",
     }.issubset(option_strings)
+
+
+def test_export_exogenous_sequences_exposes_orientation_and_record_id():
+    """export ExogenousSequences advertises orientation and record-id modes (SPEC014 / #13)."""
+    action = _subparsers_action(_build_parser())
+    export_action = None
+    for sub in action.choices["export"]._actions:
+        if isinstance(sub, argparse._SubParsersAction):
+            export_action = sub
+            break
+    assert export_action is not None
+    parser = export_action.choices["ExogenousSequences"]
+    by_dest = {a.dest: a for a in parser._actions}
+    assert by_dest["output_orientation"].choices == ["genomic", "strand"]
+    assert by_dest["output_orientation"].default == "genomic"
+    assert by_dest["record_id"].choices == ["coordinate", "name"]
+    assert by_dest["record_id"].default == "coordinate"

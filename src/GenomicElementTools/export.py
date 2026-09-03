@@ -79,6 +79,25 @@ class GenomicElementExport:
     def set_parser_exogenous_sequences(parser):
         GenomicElements.set_parser_genome(parser)
         GenomicElements.set_parser_genomic_element_region(parser)
+        parser.add_argument(
+            "--output_orientation",
+            choices=["genomic", "strand"],
+            default="genomic",
+            help=(
+                "Orientation of exported FASTA records: 'genomic' "
+                "(default, genomic-forward) or 'strand' (region-strand "
+                "orientation from the row-level strand field)."
+            ),
+        )
+        parser.add_argument(
+            "--record_id",
+            choices=["coordinate", "name"],
+            default="coordinate",
+            help=(
+                "FASTA record ID mode: 'coordinate' (default, chrom:start-end) "
+                "or 'name' (row-level name field)."
+            ),
+        )
         parser.add_argument("--opath", 
                             help="Fasta output file path.",
                             required=True,
@@ -402,7 +421,11 @@ class GenomicElementExport:
                              args.region_file_type, 
                              args.fasta_path, 
                              )
-        ge.export_exogenous_sequences(args.opath)
+        ge.export_exogenous_sequences(
+            args.opath,
+            output_orientation=args.output_orientation,
+            record_id=args.record_id,
+        )
 
     @staticmethod
     def export_wtes(args):
