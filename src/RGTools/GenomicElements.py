@@ -265,13 +265,33 @@ class GenomicElements(GeneralElements):
         '''
         if os.path.exists(fasta_path):
             raise ValueError(f"File {fasta_path} already exists.")
-        
-        for region in self.get_region_bed_table().iter_regions():
-            seq = self.get_region_seq(region["chrom"], region["start"], region["end"])
-            if seq is None:
-                raise ValueError(f"Chromosome {region['chrom']} not found in genome file. Cannot export region {region['chrom']}:{region['start']}-{region['end']}")
-            with open(fasta_path, "a") as handle:
-                handle.write(f">{region['chrom']}:{region['start']}-{region['end']}\n{seq}\n")
+
+        genome_index = self._get_genome_index()
+        regions = list(self.get_region_bed_table().iter_regions())
+        for region in regions:
+            chrom = region["chrom"]
+            start = region["start"]
+            end = region["end"]
+            locus = f"{chrom}:{start}-{end}"
+            if chrom not in genome_index:
+                raise ValueError(
+                    f"Chromosome {chrom} not found in genome file. "
+                    f"Cannot export region {locus}"
+                )
+            chrom_len = len(genome_index[chrom].seq)
+            if not (0 <= start < end <= chrom_len):
+                raise ValueError(
+                    f"Interval {locus} is not fully contained in "
+                    f"chromosome {chrom} of length {chrom_len}."
+                )
+
+        with open(fasta_path, "w") as handle:
+            for region in regions:
+                chrom = region["chrom"]
+                start = region["start"]
+                end = region["end"]
+                seq = str(genome_index[chrom].seq[start:end])
+                handle.write(f">{chrom}:{start}-{end}\n{seq}\n")
 
     def get_all_region_seqs(self):
         '''

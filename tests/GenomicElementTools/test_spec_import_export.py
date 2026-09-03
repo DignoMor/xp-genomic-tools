@@ -235,3 +235,28 @@ def test_export_bed6poly_mocked_ensembl(tmp_path: Path):
     assert len(lines) == 1
     assert lines[0].endswith("A/G")
     assert "rsTest1" in lines[0]
+
+
+def test_export_exogenous_sequences_rejects_out_of_bounds_before_publish(tmp_path: Path):
+    """CLI export ExogenousSequences validates full containment before writing (SPEC014)."""
+    tiny_fa = Path(__file__).resolve().parents[1] / "fixtures" / "spec" / "tiny.fa"
+    bed = tmp_path / "past.bed3"
+    bed.write_text("chrA\t0\t4\nchrA\t0\t9\n")
+    out = tmp_path / "out.fa"
+
+    with pytest.raises(ValueError, match=r"chrA:0-9"):
+        _run_cli(
+            [
+                "export",
+                "ExogenousSequences",
+                "--fasta_path",
+                str(tiny_fa),
+                "--region_file_path",
+                str(bed),
+                "--region_file_type",
+                "bed3",
+                "--opath",
+                str(out),
+            ]
+        )
+    assert not out.exists()

@@ -263,13 +263,96 @@ def test_export_exogenous_sequences_header_and_refuse_existing(tmp_path):
         out = tmp_path / "exported.fa"
         ge.export_exogenous_sequences(str(out))
         text = out.read_text()
-        assert ">chrB:1-5\n" in text
-        assert ">chrA:0-4\n" in text
-        assert "GGGC" in text
-        assert "ACGT" in text
+        assert text == ">chrB:1-5\nGGGC\n>chrA:0-4\nACGT\n"
 
+        before = out.read_bytes()
         with pytest.raises(ValueError, match="already exists"):
             ge.export_exogenous_sequences(str(out))
+        assert out.read_bytes() == before
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_sequences_rejects_negative_start(tmp_path):
+    """start < 0 raises contextual ValueError; destination stays absent (SPEC005)."""
+    bed = tmp_path / "neg.bed3"
+    bed.write_text("chrA\t-1\t4\n")
+    out = tmp_path / "out.fa"
+    ge = GenomicElements(str(bed), "bed3", str(TINY_FA))
+    try:
+        with pytest.raises(ValueError, match=r"chrA:-1-4"):
+            ge.export_exogenous_sequences(str(out))
+        assert not out.exists()
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_sequences_rejects_zero_width(tmp_path):
+    """start >= end raises contextual ValueError; destination stays absent (SPEC005)."""
+    bed = tmp_path / "zero.bed3"
+    bed.write_text("chrA\t4\t4\n")
+    out = tmp_path / "out.fa"
+    ge = GenomicElements(str(bed), "bed3", str(TINY_FA))
+    try:
+        with pytest.raises(ValueError, match=r"chrA:4-4"):
+            ge.export_exogenous_sequences(str(out))
+        assert not out.exists()
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_sequences_rejects_end_past_chromosome(tmp_path):
+    """end > chromosome length fails instead of truncating (SPEC005)."""
+    bed = tmp_path / "past.bed3"
+    # tiny.fa chrA length is 8; end=9 would silently truncate under slicing.
+    bed.write_text("chrA\t0\t9\n")
+    out = tmp_path / "out.fa"
+    ge = GenomicElements(str(bed), "bed3", str(TINY_FA))
+    try:
+        with pytest.raises(ValueError, match=r"chrA:0-9"):
+            ge.export_exogenous_sequences(str(out))
+        assert not out.exists()
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_sequences_rejects_missing_chrom_after_valid_row(tmp_path):
+    """Missing chrom after a valid row leaves destination absent (SPEC005)."""
+    bed = tmp_path / "mixed.bed3"
+    bed.write_text("chrA\t0\t4\nchrMissing\t0\t4\n")
+    out = tmp_path / "out.fa"
+    ge = GenomicElements(str(bed), "bed3", str(TINY_FA))
+    try:
+        with pytest.raises(ValueError, match=r"chrMissing"):
+            ge.export_exogenous_sequences(str(out))
+        assert not out.exists()
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_sequences_allows_exact_chromosome_end(tmp_path):
+    """end == chromosome length remains valid and exports the full slice (SPEC005)."""
+    bed = tmp_path / "exact.bed3"
+    bed.write_text("chrA\t0\t8\n")
+    out = tmp_path / "out.fa"
+    ge = GenomicElements(str(bed), "bed3", str(TINY_FA))
+    try:
+        ge.export_exogenous_sequences(str(out))
+        assert out.read_text() == ">chrA:0-8\nACGTACGT\n"
+    finally:
+        ge.close()
+
+
+def test_export_exogenous_sequences_validates_bedgraph_schema(tmp_path):
+    """Registered schemas other than bed3 receive the same containment checks (SPEC005)."""
+    bed = tmp_path / "past.bedGraph"
+    bed.write_text("chrA\t0\t9\t1.0\n")
+    out = tmp_path / "out.fa"
+    ge = GenomicElements(str(bed), "bedGraph", str(TINY_FA))
+    try:
+        with pytest.raises(ValueError, match=r"chrA:0-9"):
+            ge.export_exogenous_sequences(str(out))
+        assert not out.exists()
     finally:
         ge.close()
 
