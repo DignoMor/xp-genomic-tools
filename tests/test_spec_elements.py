@@ -33,7 +33,10 @@ def test_genomic_elements_construct_bed3():
 
 
 def test_genomic_elements_invalid_region_file_type():
-    with pytest.raises(ValueError, match="Invalid region file type"):
+    with pytest.raises(
+        ValueError,
+        match="neither a supported named format nor a readable",
+    ):
         GenomicElements(str(REGIONS_BED3), "not_a_type", str(TINY_FA))
 
 

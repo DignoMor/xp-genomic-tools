@@ -1,12 +1,26 @@
 
-import os 
+import json
+import os
+from pathlib import Path
 
 import numpy as np
 
-from .BedTable import BedTable3, BedTable6, BedTable6Plus, BedTable3Plus
+from .BedTable import BedTable3, BedTable6Plus, BedTable3Plus
 from .ExogenousSequences import ExogenousSequences
 from .GeneralElements import GeneralElements
 from .utils import reverse_complement_iupac, validate_iupac_dna
+
+_REGION_SCHEMA_ROOT_FIELDS = frozenset({"schema_version", "base_type", "extra_columns"})
+_REGION_SCHEMA_EXTRA_FIELDS = frozenset({"name", "dtype"})
+_REGION_SCHEMA_DTYPE_NAMES = {
+    "str": str,
+    "int": int,
+    "float": float,
+}
+_BED3_BASE_COLUMNS = ("chrom", "start", "end")
+_BED6_BASE_COLUMNS = ("chrom", "start", "end", "name", "score", "strand")
+_FORBIDDEN_NAME_CHARS = ("\t", "\n", "\r", "\0")
+
 
 class GenomicElements(GeneralElements):
     '''
@@ -19,19 +33,57 @@ class GenomicElements(GeneralElements):
 
         Keyword arguments:
         - region_file_path: Path to the region file.
-        - region_file_type: Type of the region file (see GenomicElements.get_region_file_suffix2class_dict).
+        - region_file_type: Schema selector — a predefined named region format,
+          or a path to a version-1 region-schema JSON file.
         - fasta_path: Path to the genome file.
         '''
+        schema_factory, schema_identity = self._load_region_schema(region_file_type)
+        self._init_from_resolved_schema(
+            region_file_path=region_file_path,
+            region_file_type=region_file_type,
+            fasta_path=fasta_path,
+            schema_factory=schema_factory,
+            schema_identity=schema_identity,
+        )
+
+    def _init_from_resolved_schema(
+        self,
+        *,
+        region_file_path,
+        region_file_type,
+        fasta_path,
+        schema_factory,
+        schema_identity,
+    ):
         super().__init__()
         self._region_file_path = region_file_path
         self._region_file_type = region_file_type
-        if not self._region_file_type in self.get_region_file_suffix2class_dict().keys():
-            raise ValueError(f"Invalid region file type: {self._region_file_type}")
-
-        self._region_bt = self.get_region_file_suffix2class_dict()[self.region_file_type](enable_sort=False)
+        self._region_schema_factory = schema_factory
+        self._region_schema_identity = schema_identity
+        self._region_bt = schema_factory(enable_sort=False)
         self._region_bt.load_from_file(self.region_file_path)
-
         self._fasta_path = fasta_path
+
+    @classmethod
+    def _from_resolved_schema(
+        cls,
+        *,
+        region_file_path,
+        region_file_type,
+        fasta_path,
+        schema_factory,
+        schema_identity,
+    ):
+        '''Construct a collection using an already-resolved schema snapshot.'''
+        obj = cls.__new__(cls)
+        obj._init_from_resolved_schema(
+            region_file_path=region_file_path,
+            region_file_type=region_file_type,
+            fasta_path=fasta_path,
+            schema_factory=schema_factory,
+            schema_identity=schema_identity,
+        )
+        return obj
 
     @property
     def fasta_path(self):
@@ -54,17 +106,37 @@ class GenomicElements(GeneralElements):
     @staticmethod
     def get_region_file_suffix2class_dict():
         '''
-        Return the dictionary that maps region file suffix to the corresponding class.
+        Return the dictionary that maps predefined named region formats to
+        table constructors. Every named format constructs a BedTable3Plus or
+        BedTable6Plus instance (including schemas with no extra columns).
         '''
         return {
-            "bed3": BedTable3,
-            "bed6": BedTable6,
+            "bed3": GenomicElements.BedTable3Plain,
+            "bed6": GenomicElements.BedTable6Plain,
             "bed6gene": GenomicElements.BedTable6Gene,
             "bed3gene": GenomicElements.BedTable3Gene,
             "narrowPeak": GenomicElements.BedTableNarrowPeak,
             "TREbed": GenomicElements.BedTableTREBed,
             "bedGraph": GenomicElements.BedTableBedGraph,
         }
+
+    @staticmethod
+    def BedTable3Plain(enable_sort=True):
+        '''Return a BedTable3Plus with no extra columns (plain BED3 schema).'''
+        return BedTable3Plus(
+            extra_column_names=[],
+            extra_column_dtype=[],
+            enable_sort=enable_sort,
+        )
+
+    @staticmethod
+    def BedTable6Plain(enable_sort=True):
+        '''Return a BedTable6Plus with no extra columns (plain BED6 schema).'''
+        return BedTable6Plus(
+            extra_column_names=[],
+            extra_column_dtype=[],
+            enable_sort=enable_sort,
+        )
 
     @staticmethod
     def BedTable6Gene(enable_sort=True):
@@ -113,6 +185,154 @@ class GenomicElements(GeneralElements):
                            enable_sort=enable_sort,
                            )
         return bt
+
+    @staticmethod
+    def _load_region_schema(selector):
+        '''
+        Resolve a schema selector to a table constructor and identity token.
+
+        Predefined named formats take precedence over same-named files.
+        Any other selector is treated as a schema-file path resolved against
+        the process current working directory.
+        '''
+        predefined = GenomicElements.get_region_file_suffix2class_dict()
+        if selector in predefined:
+            return predefined[selector], ("named", selector)
+
+        schema_path = Path(selector)
+        if not schema_path.is_file():
+            raise ValueError(
+                f"Region schema selector {selector!r} is neither a supported "
+                f"named format nor a readable schema file."
+            )
+
+        try:
+            with schema_path.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Region schema file {selector!r} contains malformed JSON: {exc}."
+            ) from exc
+        except OSError as exc:
+            raise ValueError(
+                f"Region schema selector {selector!r} is neither a supported "
+                f"named format nor a readable schema file."
+            ) from exc
+
+        extra_names, extra_dtypes, base_type = GenomicElements._parse_region_schema_payload(
+            payload,
+            source=selector,
+        )
+        table_cls = BedTable3Plus if base_type == "bed3" else BedTable6Plus
+        captured_names = list(extra_names)
+        captured_dtypes = list(extra_dtypes)
+
+        def factory(enable_sort=True):
+            return table_cls(
+                extra_column_names=list(captured_names),
+                extra_column_dtype=list(captured_dtypes),
+                enable_sort=enable_sort,
+            )
+
+        identity = ("custom", os.path.realpath(str(schema_path)))
+        return factory, identity
+
+    @staticmethod
+    def _parse_region_schema_payload(payload, *, source):
+        if not isinstance(payload, dict):
+            raise ValueError(
+                f"Region schema {source!r} must be a JSON object at the root."
+            )
+
+        unexpected = sorted(set(payload) - _REGION_SCHEMA_ROOT_FIELDS)
+        missing = sorted(_REGION_SCHEMA_ROOT_FIELDS - set(payload))
+        if unexpected:
+            raise ValueError(
+                f"Region schema {source!r} has unsupported root field(s): "
+                f"{', '.join(unexpected)}."
+            )
+        if missing:
+            raise ValueError(
+                f"Region schema {source!r} is missing required field(s): "
+                f"{', '.join(missing)}."
+            )
+
+        schema_version = payload["schema_version"]
+        if type(schema_version) is not int or schema_version != 1:
+            raise ValueError(
+                f"Region schema {source!r} has unsupported schema_version "
+                f"{schema_version!r}; only integer 1 is accepted."
+            )
+
+        base_type = payload["base_type"]
+        if base_type not in ("bed3", "bed6"):
+            raise ValueError(
+                f"Region schema {source!r} has unsupported base_type "
+                f"{base_type!r}; expected 'bed3' or 'bed6'."
+            )
+
+        extra_columns = payload["extra_columns"]
+        if not isinstance(extra_columns, list):
+            raise ValueError(
+                f"Region schema {source!r} field extra_columns must be a JSON array."
+            )
+
+        base_columns = _BED3_BASE_COLUMNS if base_type == "bed3" else _BED6_BASE_COLUMNS
+        extra_names = []
+        extra_dtypes = []
+        seen = set()
+
+        for index, entry in enumerate(extra_columns):
+            if not isinstance(entry, dict):
+                raise ValueError(
+                    f"Region schema {source!r} extra_columns[{index}] must be an object."
+                )
+            unexpected_extra = sorted(set(entry) - _REGION_SCHEMA_EXTRA_FIELDS)
+            missing_extra = sorted(_REGION_SCHEMA_EXTRA_FIELDS - set(entry))
+            if unexpected_extra:
+                raise ValueError(
+                    f"Region schema {source!r} extra_columns[{index}] has unsupported "
+                    f"field(s): {', '.join(unexpected_extra)}."
+                )
+            if missing_extra:
+                raise ValueError(
+                    f"Region schema {source!r} extra_columns[{index}] is missing "
+                    f"field(s): {', '.join(missing_extra)}."
+                )
+
+            name = entry["name"]
+            dtype_name = entry["dtype"]
+            if not isinstance(name, str) or name == "":
+                raise ValueError(
+                    f"Region schema {source!r} extra_columns[{index}] has an invalid "
+                    f"name {name!r}; names must be nonempty strings."
+                )
+            if any(ch in name for ch in _FORBIDDEN_NAME_CHARS):
+                raise ValueError(
+                    f"Region schema {source!r} extra_columns[{index}] name {name!r} "
+                    f"contains a forbidden control character."
+                )
+            if name in seen:
+                raise ValueError(
+                    f"Region schema {source!r} declares duplicate extra-column "
+                    f"name {name!r}."
+                )
+            if name in base_columns:
+                raise ValueError(
+                    f"Region schema {source!r} extra-column name {name!r} collides "
+                    f"with a {base_type} base column."
+                )
+            if dtype_name not in _REGION_SCHEMA_DTYPE_NAMES:
+                raise ValueError(
+                    f"Region schema {source!r} extra_columns[{index}] has unsupported "
+                    f"dtype {dtype_name!r}; expected one of str, int, float."
+                )
+
+            seen.add(name)
+            extra_names.append(name)
+            extra_dtypes.append(_REGION_SCHEMA_DTYPE_NAMES[dtype_name])
+
+        return extra_names, extra_dtypes, base_type
 
     @staticmethod
     def set_parser_genome(parser):
@@ -410,10 +630,13 @@ class GenomicElements(GeneralElements):
         result_bt = self.get_region_bed_table().apply_logical_filter(logical)
         result_bt.write(new_region_file_path)
 
-        result_ge = self.__class__(region_file_path=new_region_file_path,
-                                   region_file_type=self.region_file_type,
-                                   fasta_path=self.fasta_path,
-                                   )
+        result_ge = self.__class__._from_resolved_schema(
+            region_file_path=new_region_file_path,
+            region_file_type=self.region_file_type,
+            fasta_path=self.fasta_path,
+            schema_factory=self._region_schema_factory,
+            schema_identity=self._region_schema_identity,
+        )
         
         for anno_name, anno_arr in self._anno_arr_dict.items():
             new_anno_arr = anno_arr[logical]

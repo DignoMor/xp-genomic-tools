@@ -204,14 +204,30 @@ class BedTable3:
             ipath = sys.stdin
 
         try:
-            self._data_df = pd.read_csv(ipath, 
-                                        sep="\t", 
-                                        names=self.column_names,
-                                        na_values='.', 
-                                        )
+            raw_df = pd.read_csv(
+                ipath,
+                sep="\t",
+                header=None,
+                na_values=".",
+                dtype=str,
+            )
+        except pd.errors.EmptyDataError:
+            self._data_df = pd.DataFrame(columns=self.column_names)
+            return
         except ValueError as e:
-            raise BedTableLoadException(f"Error loading bed file: number of columns does not match.")
-        
+            raise BedTableLoadException(
+                f"Error loading bed file: number of columns does not match."
+            ) from e
+
+        expected_columns = len(self.column_names)
+        if raw_df.shape[1] != expected_columns:
+            raise BedTableLoadException(
+                f"Error loading bed file: number of columns does not match "
+                f"(expected {expected_columns}, got {raw_df.shape[1]})."
+            )
+
+        raw_df.columns = self.column_names
+        self._data_df = raw_df
         self._force_dtype()
 
         if self.enable_sort:
