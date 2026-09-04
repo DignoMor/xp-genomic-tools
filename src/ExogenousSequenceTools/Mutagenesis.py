@@ -1,10 +1,10 @@
 
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from RGTools.ExogenousSequences import ExogenousSequences
 
 class Mutagenesis:
     @staticmethod
     def set_parser_mutagenesis(parser):
-        ExogeneousSequences.set_parser_exogeneous_sequences(parser)
+        ExogenousSequences.set_parser_exogenous_sequences(parser)
 
         parser.add_argument("--loc_npy",
                             help="Path to the location npy file.",
@@ -24,8 +24,8 @@ class Mutagenesis:
     @staticmethod
     def mutagenesis_main(args):
 
-        input_es = ExogeneousSequences(args.fasta)
-        target_es = ExogeneousSequences(args.mut_fasta)
+        input_es = ExogenousSequences(args.fasta)
+        target_es = ExogenousSequences(args.mut_fasta)
 
         input_es.load_region_anno_from_npy("loc", args.loc_npy, anno_type="stat")
         mut_locs = input_es.get_stat_arr("loc")
@@ -58,4 +58,4 @@ class Mutagenesis:
                     output_seqs.append(output_seq)
                     output_seq_ids.append(all_elem_ids[i] + "_mut_" + target_seq_id)
             
-        ExogeneousSequences.write_sequences_to_fasta(output_seq_ids, output_seqs, args.output_fasta)
+        ExogenousSequences.write_sequences_to_fasta(output_seq_ids, output_seqs, args.output_fasta)

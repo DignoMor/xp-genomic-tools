@@ -5,8 +5,8 @@ import unittest
 
 import numpy as np
 
-from ExogeneousSequenceTools.cli import ExogeneousSequenceTools
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from ExogenousSequenceTools.cli import ExogenousSequenceTools
+from RGTools.ExogenousSequences import ExogenousSequences
 
 
 class OneHotTest(unittest.TestCase):
@@ -24,7 +24,7 @@ class OneHotTest(unittest.TestCase):
     def _write_fasta(path, records):
         seq_ids = [r[0] for r in records]
         seqs = [r[1] for r in records]
-        ExogeneousSequences.write_sequences_to_fasta(seq_ids, seqs, path)
+        ExogenousSequences.write_sequences_to_fasta(seq_ids, seqs, path)
 
     def test_onehot_writes_channel_first_output(self):
         fasta_path = os.path.join(self.test_dir, "input.fa")
@@ -42,7 +42,7 @@ class OneHotTest(unittest.TestCase):
             fasta=fasta_path,
             opath=output_npy,
         )
-        ExogeneousSequenceTools.main(args)
+        ExogenousSequenceTools.main(args)
         self.assertTrue(os.path.exists(output_npy))
 
         output_arr = np.load(output_npy)
@@ -70,7 +70,7 @@ class OneHotTest(unittest.TestCase):
             opath=output_npy,
         )
         with self.assertRaises(ValueError):
-            ExogeneousSequenceTools.main(args)
+            ExogenousSequenceTools.main(args)
         self.assertFalse(os.path.exists(output_npy))
 
 

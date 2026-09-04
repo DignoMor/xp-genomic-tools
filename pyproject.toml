@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "RGTools"
-version = "0.3.0a4"
+version = "0.4.0a1"
 description = "Regulatory Genome Tools — BED regions, motifs, BigWig tracks, and genomic element utilities"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -28,12 +28,12 @@ dev = [
 
 [project.scripts]
 GenomicElementTools = "GenomicElementTools.__main__:main"
-ExogeneousSequenceTools = "ExogeneousSequenceTools.__main__:main"
+ExogenousSequenceTools = "ExogenousSequenceTools.__main__:main"
 MotifTools = "MotifTools.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["RGTools*", "GenomicElementTools*", "ExogeneousSequenceTools*", "MotifTools*"]
+include = ["RGTools*", "GenomicElementTools*", "ExogenousSequenceTools*", "MotifTools*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

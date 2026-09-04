@@ -3,7 +3,7 @@ import sys
 
 import numpy as np
 
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from RGTools.ExogenousSequences import ExogenousSequences
 
 class SignalTrack:
     @staticmethod
@@ -74,7 +74,7 @@ class SignalTrack:
     def set_parser_gen_track(parser):
         operation_parser = parser.add_subparsers(dest="operation", required=True)
         parser_single_loc = operation_parser.add_parser("single_loc")
-        ExogeneousSequences.set_parser_exogeneous_sequences(parser_single_loc)
+        ExogenousSequences.set_parser_exogenous_sequences(parser_single_loc)
         parser_single_loc.add_argument("--loc", 
                                        help="Location to generate the track for.",
                                        required=True,
@@ -88,7 +88,7 @@ class SignalTrack:
     @staticmethod
     def _gen_track(args, operation):
         if operation == "single_loc":
-            es = ExogeneousSequences(args.fasta)
+            es = ExogenousSequences(args.fasta)
 
             signal_track = np.ones((es.get_num_regions(), 1), 
                                    dtype=np.int64, 

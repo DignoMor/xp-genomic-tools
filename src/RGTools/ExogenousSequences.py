@@ -1,5 +1,6 @@
 
 import os
+import tempfile
 
 import pandas as pd
 
@@ -8,22 +9,21 @@ from Bio import SeqIO
 from .GeneralElements import GeneralElements
 from .BedTable import BedTable3
 
-class ExogeneousSequences(GeneralElements):
+class ExogenousSequences(GeneralElements):
     '''
-    Class for Exogeneous sequences.
+    Class for exogenous sequence collections.
 
-    This class inherits from GeneralElements and provides
-    functionality for handling exogeneous sequences (sequences
-    that are not part of a reference genome).
+    An exogenous sequence collection holds nucleotide sequences
+    represented independently of a genome assembly and without
+    genomic coordinates. Sequence origin and potential mappability
+    do not determine membership.
 
-    Usually exogeneous sequences are small sets 
-    of sequences compared to reference genome. 
-    As a result this class read sequences into 
-    memory for further analysis.
+    Collections are typically small enough to load into memory for
+    further analysis.
     '''
     def __init__(self, fasta_path):
         '''
-        Initialize the ExogeneousSequences object.
+        Initialize the ExogenousSequences object.
 
         Key arguments:
             - fasta_path: path to the fasta file
@@ -44,7 +44,7 @@ class ExogeneousSequences(GeneralElements):
 
     @property
     def region_file_path(self):
-        raise NotImplementedError("ExogeneousSequences does not use region_file_path. ")
+        raise NotImplementedError("ExogenousSequences does not use region_file_path. ")
     
     def get_region_bed_table(self):
         '''
@@ -108,7 +108,7 @@ class ExogeneousSequences(GeneralElements):
         - new_fasta_path: Path to save the new fasta file for filtered sequences.
 
         Returns:
-        - a new ExogeneousSequences object with the filtered sequences.
+        - a new ExogenousSequences object with the filtered sequences.
         '''
         if os.path.exists(new_fasta_path):
             raise ValueError(f"File {new_fasta_path} already exists.")
@@ -121,7 +121,7 @@ class ExogeneousSequences(GeneralElements):
             for seq_id, row in filtered_df.iterrows():
                 f.write(f">{seq_id}\n{row['seqs']}\n")
         
-        # Create new ExogeneousSequences object
+        # Create new ExogenousSequences object
         result_es = self.__class__(fasta_path=new_fasta_path)
         
         # Copy filtered annotations
@@ -154,8 +154,8 @@ class ExogeneousSequences(GeneralElements):
                             )
 
     @staticmethod
-    def set_parser_exogeneous_sequences(parser):
-        ExogeneousSequences.set_parser_genome(parser)
+    def set_parser_exogenous_sequences(parser):
+        ExogenousSequences.set_parser_genome(parser)
     
     @staticmethod
     def write_sequences_to_fasta(seq_ids: list, sequences: list, fasta_path: str):
@@ -169,9 +169,30 @@ class ExogeneousSequences(GeneralElements):
         '''
         if os.path.exists(fasta_path):
             raise ValueError(f"File {fasta_path} already exists.")
-        
-        with open(fasta_path, "w") as f:
-            for seq_id, seq in zip(seq_ids, sequences):
-                f.write(f">{seq_id}\n{seq}\n")
+
+        parent = os.path.dirname(os.path.abspath(fasta_path)) or "."
+        fd = None
+        tmp_path = None
+        try:
+            fd, tmp_path = tempfile.mkstemp(
+                prefix=f".{os.path.basename(fasta_path)}.",
+                suffix=".tmp",
+                dir=parent,
+                text=True,
+            )
+            with os.fdopen(fd, "w") as handle:
+                fd = None
+                for seq_id, seq in zip(seq_ids, sequences):
+                    handle.write(f">{seq_id}\n{seq}\n")
+            os.replace(tmp_path, fasta_path)
+            tmp_path = None
+        finally:
+            if fd is not None:
+                os.close(fd)
+            if tmp_path is not None:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
 

@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 from Bio.Data.IUPACData import ambiguous_dna_complement, ambiguous_dna_values
 
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from RGTools.ExogenousSequences import ExogenousSequences
 from RGTools.GenomicElements import GenomicElements
 from RGTools.TSSRelativeCoordinates import tss_relative_to_track_index
 
@@ -170,7 +170,7 @@ def _load_rounds(manifest_path: Path) -> list[RoundSpec]:
 
 
 def _load_targets(path: Path, *, round_id: str) -> list[TargetRecord]:
-    es = ExogeneousSequences(str(path))
+    es = ExogenousSequences(str(path))
     ids = list(es.get_sequence_ids())
     seqs = list(es.get_all_region_seqs())
     if not ids:
@@ -383,6 +383,16 @@ class TssRelativeMutagenesis:
             help="Replace an existing output directory after successful staging.",
             action="store_true",
         )
+        parser.add_argument(
+            "--output_orientation",
+            help=(
+                "Orientation of final sequences.fasta records: "
+                "'genomic' (default, genomic-forward) or 'strand' "
+                "(transcriptional orientation from the unique round strand)."
+            ),
+            choices=["genomic", "strand"],
+            default="genomic",
+        )
 
     @staticmethod
     def main(args):
@@ -431,6 +441,18 @@ class TssRelativeMutagenesis:
                 )
 
         rounds = _load_rounds(Path(args.round_manifest).resolve())
+        output_orientation = args.output_orientation
+        if output_orientation == "strand":
+            strands = {round_spec.strand for round_spec in rounds}
+            if len(strands) != 1:
+                raise ValueError(
+                    "--output_orientation strand requires every round to declare "
+                    f"the same strand; found mixed strands {sorted(strands)}."
+                )
+            output_strand = next(iter(strands))
+        else:
+            output_strand = None
+
         round_targets: list[list[TargetRecord]] = []
         round_coords: list[np.ndarray] = []
         for round_spec in rounds:
@@ -584,6 +606,10 @@ class TssRelativeMutagenesis:
                 int(row["round_index"]),
             )
         )
+
+        if output_orientation == "strand" and output_strand == "-":
+            for item in derived:
+                item.sequence = _reverse_complement_iupac(item.sequence)
 
         _publish_bundle(
             output_dir=output_dir,

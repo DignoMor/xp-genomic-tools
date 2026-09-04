@@ -6,8 +6,8 @@ import unittest
 
 import numpy as np
 
-from ExogeneousSequenceTools.Motif import Motif
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from ExogenousSequenceTools.Motif import Motif
+from RGTools.ExogenousSequences import ExogenousSequences
 from RGTools.MemeMotif import MemeMotif
 
 from tests._paths import SAMPLE_MEME
@@ -47,7 +47,7 @@ class MotifTest(unittest.TestCase):
         if os.path.exists(self._fasta_path):
             os.remove(self._fasta_path)
 
-        ExogeneousSequences.write_sequences_to_fasta(
+        ExogenousSequences.write_sequences_to_fasta(
             ["seq1", "seq2", "seq3", "seq4", "seq5"],
             seqs,
             self._fasta_path,

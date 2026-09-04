@@ -1,4 +1,4 @@
-"""SPEC016 contract tests: ExogeneousSequenceTools shared CLI surface."""
+"""SPEC016 contract tests: ExogenousSequenceTools shared CLI surface."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import argparse
 
 import pytest
 
-from ExogeneousSequenceTools import ExogeneousSequenceTools
+from ExogenousSequenceTools import ExogenousSequenceTools
 
 EXPECTED_SUBCOMMANDS = {
     "assemble",
@@ -20,8 +20,8 @@ EXPECTED_SUBCOMMANDS = {
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="ExogeneousSequenceTools")
-    ExogeneousSequenceTools.set_parser(parser)
+    parser = argparse.ArgumentParser(prog="ExogenousSequenceTools")
+    ExogenousSequenceTools.set_parser(parser)
     return parser
 
 
@@ -33,7 +33,7 @@ def _subparsers_action(parser: argparse.ArgumentParser) -> argparse._SubParsersA
 
 
 def test_help_lists_expected_subcommands():
-    """ExogeneousSequenceTools --help lists the SPEC016 subcommand inventory."""
+    """ExogenousSequenceTools --help lists the SPEC016 subcommand inventory."""
     help_text = _build_parser().format_help()
     for name in EXPECTED_SUBCOMMANDS:
         assert name in help_text
@@ -49,7 +49,7 @@ def test_parser_registers_expected_subcommands():
 def test_unknown_subcommand_raises_value_error():
     """Unknown top-level subcommand → ValueError (SPEC016)."""
     with pytest.raises(ValueError, match="[Ss]ubcommand"):
-        ExogeneousSequenceTools.main(argparse.Namespace(subcommand="not_a_real_cmd"))
+        ExogenousSequenceTools.main(argparse.Namespace(subcommand="not_a_real_cmd"))
 
 
 def test_shared_fasta_arg_on_onehot():

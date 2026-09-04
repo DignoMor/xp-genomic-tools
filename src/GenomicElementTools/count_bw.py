@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from RGTools.BedTable import BedTable6Plus
 from RGTools.GenomicElements import GenomicElements
 from RGTools.BwTrack import SingleBwTrack, PairedBwTrack
 from RGTools.utils import str2bool
@@ -119,11 +120,15 @@ class CountPairedBw:
                                  bw_mn_path=args.bw_mn,
                                  )
 
+        # Strand comes from BED6 base capability, not column-name presence.
+        # A BED3+ schema may declare an extra column named "strand".
+        has_strand = isinstance(region_bt, BedTable6Plus)
+
         output_list = []
         for region in region_bt.iter_regions():
             if args.override_strand:
                 strand = args.override_strand
-            elif args.region_file_type == "bed3":
+            elif not has_strand:
                 strand = "."
             elif not region["strand"]:
                 strand = "."

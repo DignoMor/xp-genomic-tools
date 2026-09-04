@@ -13,7 +13,7 @@ import requests
 
 from GenomicElementTools.export import GenomicElementExport
 from RGTools.BedTable import BedTable3, BedTable6, BedTable6Plus
-from RGTools.ExogeneousSequences import ExogeneousSequences
+from RGTools.ExogenousSequences import ExogenousSequences
 from RGTools.GenomicElements import GenomicElements
 
 from tests._paths import FIXTURES_DIR, HAS_HG38, HG38_FA, SKIP_NO_HG38
@@ -110,10 +110,10 @@ class GenomicElementExportTest(unittest.TestCase):
             self.skipTest(SKIP_NO_HG38)
 
     def __read_fasta_records(self, fasta_path):
-        es = ExogeneousSequences(fasta_path)
+        es = ExogenousSequences(fasta_path)
         return list(zip(es.get_sequence_ids(), es.get_all_region_seqs()))
 
-    def test_export_exogeneous_sequences(self):
+    def test_export_exogenous_sequences(self):
         self._require_hg38()
         ofile = os.path.join(self.__wdir, "test.fa")
         args = argparse.Namespace(
@@ -121,9 +121,9 @@ class GenomicElementExportTest(unittest.TestCase):
             region_file_type="bed3",
             fasta_path=self.__fasta_path,
             opath=ofile,
-            oformat="ExogeneousSequences",
+            oformat="ExogenousSequences",
         )
-        GenomicElementExport.export_exogeneous_sequences(args)
+        GenomicElementExport.export_exogenous_sequences(args)
 
         with open(ofile, "r") as handle:
             lines = handle.readlines()

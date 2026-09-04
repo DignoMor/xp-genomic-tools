@@ -82,6 +82,7 @@ def _base_argv(
     output_dir: Path,
     write_replaced_windows: bool = False,
     force: bool = False,
+    output_orientation: str | None = None,
 ) -> list[str]:
     argv = [
         "tss_relative_mutagenesis",
@@ -100,6 +101,8 @@ def _base_argv(
         argv.append("--write_replaced_windows")
     if force:
         argv.append("--force")
+    if output_orientation is not None:
+        argv.extend(["--output_orientation", output_orientation])
     return argv
 
 
@@ -1046,5 +1049,280 @@ def test_end_to_end_selection_mask_export_mutagenesis(tmp_path: Path):
     assert [row["round_id"] for row in rows] == ["selected", "followup"]
     assert (out / "replaced" / "selected.fasta").is_file()
     assert (out / "replaced" / "followup.fasta").is_file()
+
+
+# --- Issue 12: --output_orientation ---
+
+
+def _rc_iupac(seq: str) -> str:
+    """Independent IUPAC reverse complement for expected strand-oriented output."""
+    from Bio.Data.IUPACData import ambiguous_dna_complement
+
+    complement_map = {
+        **ambiguous_dna_complement,
+        **{k.lower(): v.lower() for k, v in ambiguous_dna_complement.items()},
+    }
+    return "".join(complement_map[base] for base in reversed(seq))
+
+
+def test_output_orientation_default_matches_explicit_genomic(tmp_path: Path):
+    """Omitting --output_orientation matches explicit genomic byte-for-byte."""
+    default_root = tmp_path / "default"
+    default_root.mkdir()
+    manifest, out_default = _one_round_plus_setup(default_root)
+    out_genomic = tmp_path / "genomic"
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=ONE_REGION,
+            manifest=manifest,
+            output_dir=out_default,
+        )
+    )
+    work = tmp_path / "genomic_work"
+    shutil.copytree(manifest.parent, work)
+    genomic_manifest = work / "rounds.tsv"
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=ONE_REGION,
+            manifest=genomic_manifest,
+            output_dir=out_genomic,
+            output_orientation="genomic",
+        )
+    )
+    assert (out_default / "sequences.fasta").read_bytes() == (
+        out_genomic / "sequences.fasta"
+    ).read_bytes()
+    assert (out_default / "manifest.tsv").read_bytes() == (
+        out_genomic / "manifest.tsv"
+    ).read_bytes()
+
+
+def test_strand_orientation_plus_preserves_final_sequences(tmp_path: Path):
+    """Plus-strand strand mode leaves complete final sequences unchanged."""
+    manifest, out = _one_round_plus_setup(tmp_path)
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=ONE_REGION,
+            manifest=manifest,
+            output_dir=out,
+            output_orientation="strand",
+        )
+    )
+    records = _read_fasta(out / "sequences.fasta")
+    assert records == [("r000001|chr1:100-110|target=t1", "ACGTAAAAAC")]
+    rows = _read_manifest(out / "manifest.tsv")
+    assert rows[0]["strand"] == "+"
+    assert rows[0]["start"] == "100"
+    assert rows[0]["end"] == "110"
+
+
+def test_strand_orientation_minus_reverse_complements_final_sequence(
+    tmp_path: Path,
+):
+    """Minus-strand strand mode emits RC of the fully mutated genomic sequence."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "coord.npy", [1])
+    _write_fasta(work / "targets.fa", [("t1", "ATy")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "minus1",
+                "coordinate_stat": "coord.npy",
+                "target_fasta": "targets.fa",
+                "strand": "-",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=ONE_REGION,
+            manifest=manifest,
+            output_dir=out,
+            output_orientation="strand",
+        )
+    )
+    seq_id, seq = _read_fasta(out / "sequences.fasta")[0]
+    genomic = "ACGrATGTAC"  # known genomic-forward result from SPEC027 minus test
+    assert seq == _rc_iupac(genomic)
+    # Supplied strand-oriented target appears literally after final RC.
+    assert "ATy" in seq
+    assert seq_id == "r000001|chr1:100-110|target=t1"
+    row = _read_manifest(out / "manifest.tsv")[0]
+    assert row["strand"] == "-"
+    assert row["chrom"] == "chr1"
+    assert row["start"] == "100"
+    assert row["end"] == "110"
+    assert list(row.keys()) == OUTPUT_MANIFEST_COLUMNS
+
+
+def test_multi_round_same_strand_orients_only_after_last_round(tmp_path: Path):
+    """Multiple same-strand rounds apply whole-record orientation once at the end."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "c1.npy", [1])
+    _write_coord(work / "c2.npy", [-2])
+    _write_fasta(work / "t1.fa", [("t1", "ATy")])
+    _write_fasta(work / "t2.fa", [("t1", "GG")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "first",
+                "coordinate_stat": "c1.npy",
+                "target_fasta": "t1.fa",
+                "strand": "-",
+            },
+            {
+                "round_id": "second",
+                "coordinate_stat": "c2.npy",
+                "target_fasta": "t2.fa",
+                "strand": "-",
+            },
+        ],
+    )
+    out_genomic = tmp_path / "out_genomic"
+    out_strand = tmp_path / "out_strand"
+    argv_common = dict(
+        genome=GENOME,
+        regions=ONE_REGION,
+        manifest=manifest,
+        write_replaced_windows=True,
+    )
+    _run_cli(_base_argv(**argv_common, output_dir=out_genomic))
+    _run_cli(
+        _base_argv(
+            **argv_common,
+            output_dir=out_strand,
+            output_orientation="strand",
+        )
+    )
+
+    genomic_records = _read_fasta(out_genomic / "sequences.fasta")
+    strand_records = _read_fasta(out_strand / "sequences.fasta")
+    assert [rid for rid, _ in genomic_records] == [rid for rid, _ in strand_records]
+    assert len(genomic_records) == 1
+    genomic_seq = genomic_records[0][1]
+    strand_seq = strand_records[0][1]
+    assert strand_seq == _rc_iupac(genomic_seq)
+    assert len(strand_seq) == len(genomic_seq)
+
+    # Replaced-window audit FASTAs remain genomic-forward in both modes.
+    assert (out_strand / "replaced" / "first.fasta").read_bytes() == (
+        out_genomic / "replaced" / "first.fasta"
+    ).read_bytes()
+    assert (out_strand / "replaced" / "second.fasta").read_bytes() == (
+        out_genomic / "replaced" / "second.fasta"
+    ).read_bytes()
+    assert (out_strand / "manifest.tsv").read_bytes() == (
+        out_genomic / "manifest.tsv"
+    ).read_bytes()
+
+
+def test_mixed_strand_manifest_rejected_before_staging_in_strand_mode(
+    tmp_path: Path,
+):
+    """Mixed +/− rounds fail strand orientation before any bundle is staged."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "c1.npy", [1])
+    _write_coord(work / "c2.npy", [1])
+    _write_fasta(work / "t1.fa", [("t1", "AAA")])
+    _write_fasta(work / "t2.fa", [("t1", "CCC")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "plus",
+                "coordinate_stat": "c1.npy",
+                "target_fasta": "t1.fa",
+                "strand": "+",
+            },
+            {
+                "round_id": "minus",
+                "coordinate_stat": "c2.npy",
+                "target_fasta": "t2.fa",
+                "strand": "-",
+            },
+        ],
+    )
+    out = tmp_path / "out"
+    prior = out
+    prior.mkdir()
+    (prior / "sentinel.txt").write_text("keep-me\n")
+    with pytest.raises(ValueError, match="mixed strands"):
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=ONE_REGION,
+                manifest=manifest,
+                output_dir=out,
+                output_orientation="strand",
+                force=True,
+            )
+        )
+    assert (prior / "sentinel.txt").read_text() == "keep-me\n"
+    assert not list(out.parent.glob(f".{out.name}.staging*"))
+    assert not (out / "sequences.fasta").exists()
+
+
+def test_mixed_strand_manifest_allowed_in_genomic_mode(tmp_path: Path):
+    """Genomic orientation still accepts mixed-strand round manifests."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "c1.npy", [1])
+    _write_coord(work / "c2.npy", [1])
+    _write_fasta(work / "t1.fa", [("t1", "AAA")])
+    _write_fasta(work / "t2.fa", [("t1", "CCC")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "plus",
+                "coordinate_stat": "c1.npy",
+                "target_fasta": "t1.fa",
+                "strand": "+",
+            },
+            {
+                "round_id": "minus",
+                "coordinate_stat": "c2.npy",
+                "target_fasta": "t2.fa",
+                "strand": "-",
+            },
+        ],
+    )
+    out_default = tmp_path / "out_default"
+    out_genomic = tmp_path / "out_genomic"
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=ONE_REGION,
+            manifest=manifest,
+            output_dir=out_default,
+        )
+    )
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=ONE_REGION,
+            manifest=manifest,
+            output_dir=out_genomic,
+            output_orientation="genomic",
+        )
+    )
+    assert (out_default / "sequences.fasta").read_bytes() == (
+        out_genomic / "sequences.fasta"
+    ).read_bytes()
+    assert (out_default / "manifest.tsv").read_bytes() == (
+        out_genomic / "manifest.tsv"
+    ).read_bytes()
+    rows = _read_manifest(out_genomic / "manifest.tsv")
+    assert [row["strand"] for row in rows] == ["+", "-"]
 
 
