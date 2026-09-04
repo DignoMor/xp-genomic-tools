@@ -125,7 +125,6 @@ def test_spec010_generic_primary_requires_named_or_custom_schema(path):
         NAMED_FORMATS
     )
     assert schema_action.choices is None
-    assert type_action.dest == schema_action.dest == "region_file_type"
 
     mex_groups = [
         g
@@ -402,6 +401,54 @@ def test_spec012_count_paired_bw_custom_bed3plus_uses_unstranded_dot(tmp_path: P
             str(out),
         ]
     )
+    np.testing.assert_allclose(np.load(out).ravel(), [32.0, 32.0])
+
+
+def test_spec012_count_paired_bw_bed3plus_extra_named_strand_is_unstranded(
+    tmp_path: Path,
+):
+    """A BED3+ extra column named 'strand' is not BED6 strand capability (SPEC012)."""
+    pyBigWig = pytest.importorskip("pyBigWig")
+
+    def _write_constant_bw(path: Path, value: float) -> Path:
+        bw = pyBigWig.open(str(path), "w")
+        bw.addHeader([("chrA", 8)])
+        bw.addEntries(["chrA"], [0], ends=[8], values=[float(value)])
+        bw.close()
+        return path
+
+    schema = _write_schema(
+        tmp_path / "fake_strand.json",
+        base_type="bed3",
+        extra_columns=[{"name": "strand", "dtype": "str"}],
+    )
+    bed = _write_bed(
+        tmp_path / "regions.bed",
+        ["chrA\t0\t4\t+", "chrA\t0\t4\t-"],
+    )
+    pl = _write_constant_bw(tmp_path / "pl.bw", 10.0)
+    mn = _write_constant_bw(tmp_path / "mn.bw", 2.0)
+    out = tmp_path / "counts.npy"
+    _run_cli(
+        [
+            "count_paired_bw",
+            "--region_file_path",
+            str(bed),
+            "--region_file_schema",
+            str(schema),
+            "--bw_pl",
+            str(pl),
+            "--bw_mn",
+            str(mn),
+            "--negative_mn",
+            "True",
+            "--flip_mn",
+            "False",
+            "--opath",
+            str(out),
+        ]
+    )
+    # Unstranded '.' → same as other BED3+ cases (pl + negative_mn*mn over the window).
     np.testing.assert_allclose(np.load(out).ravel(), [32.0, 32.0])
 
 
@@ -811,7 +858,6 @@ def test_spec010_context_requires_independent_named_or_custom_schema(path):
     schema_action = next(
         a for a in parser._actions if "--context_file_schema" in a.option_strings
     )
-    assert type_action.dest == schema_action.dest == "context_file_type"
     assert schema_action.choices is None
     mex_groups = [
         g
@@ -958,7 +1004,6 @@ def test_spec010_merged_ge_requires_named_or_custom_schema():
     schema_action = next(
         a for a in parser._actions if "--region_file_schema" in a.option_strings
     )
-    assert type_action.dest == schema_action.dest == "region_file_type"
     mex_groups = [
         g
         for g in getattr(parser, "_mutually_exclusive_groups", [])

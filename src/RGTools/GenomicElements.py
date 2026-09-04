@@ -640,9 +640,9 @@ class GenomicElements(GeneralElements):
             raise ValueError(f"File {fasta_path} already exists.")
 
         region_bt = self.get_region_bed_table()
-        fields = set(region_bt.column_names)
-        has_strand = "strand" in fields
-        has_name = "name" in fields
+        # BED6 base fields only — not extra columns that reuse those names.
+        has_strand = isinstance(region_bt, BedTable6Plus)
+        has_name = isinstance(region_bt, BedTable6Plus)
 
         if output_orientation == "strand" and not has_strand:
             raise ValueError(
