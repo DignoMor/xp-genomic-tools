@@ -13,22 +13,7 @@ class GetContextGe:
         )
 
         GenomicElements.set_parser_genomic_element_region(nearest_parser)
-        nearest_parser.add_argument(
-            "--context_file_path",
-            help="Path to the context region file.",
-            required=True,
-            type=str,
-        )
-        nearest_parser.add_argument(
-            "--context_file_type",
-            help="Type of the context region file. "
-                 "Valid types: {}".format(
-                     list(GenomicElements.get_region_file_suffix2class_dict().keys())
-                 ),
-            required=True,
-            type=str,
-            choices=GenomicElements.get_region_file_suffix2class_dict().keys(),
-        )
+        GenomicElements.set_parser_context_region(nearest_parser)
         nearest_parser.add_argument(
             "--opath",
             help="Path to the output region file.",
@@ -41,22 +26,7 @@ class GetContextGe:
             help="Select context region with maximum provided stat in each input window.",
         )
         GenomicElements.set_parser_genomic_element_region(windowed_argmax_parser)
-        windowed_argmax_parser.add_argument(
-            "--context_file_path",
-            help="Path to the context region file.",
-            required=True,
-            type=str,
-        )
-        windowed_argmax_parser.add_argument(
-            "--context_file_type",
-            help="Type of the context region file. "
-                 "Valid types: {}".format(
-                     list(GenomicElements.get_region_file_suffix2class_dict().keys())
-                 ),
-            required=True,
-            type=str,
-            choices=GenomicElements.get_region_file_suffix2class_dict().keys(),
-        )
+        GenomicElements.set_parser_context_region(windowed_argmax_parser)
         windowed_argmax_parser.add_argument(
             "--context_stat_path",
             help="Path to the context stat .npy file.",

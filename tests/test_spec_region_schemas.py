@@ -543,3 +543,131 @@ def test_spec004_direct_bedtable_construction_apis_remain_supported(tmp_path):
     bed6p = _write_bed(tmp_path / "r.bed6p", ["chrA\t0\t4\tn\t1.0\t+\tTP53"])
     b6p.load_from_file(str(bed6p))
     assert list(b6p.get_region_extra_column("g")) == ["TP53"]
+
+# ---------------------------------------------------------------------------
+# Merge schema ownership (SPEC005)
+# ---------------------------------------------------------------------------
+
+
+def test_spec005_named_merge_remains_compatible(tmp_path):
+    left = _write_bed(tmp_path / "left.bed3", ["chr2\t100\t110", "chr2\t200\t210"])
+    right = _write_bed(tmp_path / "right.bed3", ["chr1\t50\t60", "chr1\t300\t310"])
+    out = tmp_path / "merged.bed3"
+    left_ge = GenomicElements(str(left), "bed3", str(TINY_FA))
+    right_ge = GenomicElements(str(right), "bed3", str(TINY_FA))
+    try:
+        left_ge.load_region_stat_from_arr("stat", np.array([100, 200]))
+        right_ge.load_region_stat_from_arr("stat", np.array([10, 20]))
+        merged = GenomicElements.merge_genomic_elements(
+            left_ge, right_ge, str(out), ["stat"], sort_new_ge=True
+        )
+        try:
+            assert merged.get_num_regions() == 4
+            assert merged.region_file_type == "bed3"
+            np.testing.assert_array_equal(
+                merged.get_stat_arr("stat").reshape(-1), np.array([10, 20, 100, 200])
+            )
+        finally:
+            merged.close()
+    finally:
+        left_ge.close()
+        right_ge.close()
+
+
+def test_spec005_custom_merge_accepts_same_canonical_schema_paths(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    schema = _write_schema(
+        tmp_path / "meta.json",
+        base_type="bed3",
+        extra_columns=[
+            {"name": "label", "dtype": "str"},
+            {"name": "count", "dtype": "int"},
+        ],
+    )
+    link = tmp_path / "alias.json"
+    link.symlink_to(schema)
+    left = _write_bed(tmp_path / "left.bed", ["chr2\t100\t110\tL\t1"])
+    right = _write_bed(tmp_path / "right.bed", ["chr1\t50\t60\tR\t2"])
+    out = tmp_path / "merged.bed"
+    left_ge = GenomicElements(str(left), "meta.json", str(TINY_FA))
+    right_ge = GenomicElements(str(right), str(link), str(TINY_FA))
+    try:
+        left_ge.load_region_stat_from_arr("stat", np.array([7.0]))
+        right_ge.load_region_stat_from_arr("stat", np.array([3.0]))
+        merged = GenomicElements.merge_genomic_elements(
+            left_ge, right_ge, str(out), ["stat"], sort_new_ge=False
+        )
+        try:
+            bt = merged.get_region_bed_table()
+            assert bt.extra_column_names == ["label", "count"]
+            assert bt.extra_column_dtype == [str, int]
+            assert bt.get_region_extra_column("label").tolist() == ["L", "R"]
+            assert bt.get_region_extra_column("count").tolist() == [1, 2]
+            np.testing.assert_array_equal(
+                merged.get_stat_arr("stat").reshape(-1), np.array([7.0, 3.0])
+            )
+        finally:
+            merged.close()
+    finally:
+        left_ge.close()
+        right_ge.close()
+
+
+def test_spec005_custom_merge_rejects_structurally_equal_distinct_files(tmp_path):
+    schema_a = _write_schema(
+        tmp_path / "a.json",
+        base_type="bed3",
+        extra_columns=[{"name": "label", "dtype": "str"}],
+    )
+    schema_b = _write_schema(
+        tmp_path / "b.json",
+        base_type="bed3",
+        extra_columns=[{"name": "label", "dtype": "str"}],
+    )
+    left = _write_bed(tmp_path / "left.bed", ["chr1\t0\t4\tA"])
+    right = _write_bed(tmp_path / "right.bed", ["chr1\t10\t14\tB"])
+    left_ge = GenomicElements(str(left), str(schema_a), str(TINY_FA))
+    right_ge = GenomicElements(str(right), str(schema_b), str(TINY_FA))
+    try:
+        with pytest.raises(ValueError, match="schema"):
+            GenomicElements.merge_genomic_elements(
+                left_ge, right_ge, str(tmp_path / "out.bed"), [], sort_new_ge=False
+            )
+    finally:
+        left_ge.close()
+        right_ge.close()
+
+
+def test_spec005_custom_merge_rejects_incompatible_snapshots_same_path(tmp_path):
+    schema = _write_schema(
+        tmp_path / "meta.json",
+        base_type="bed3",
+        extra_columns=[{"name": "label", "dtype": "str"}],
+    )
+    left = _write_bed(tmp_path / "left.bed", ["chr1\t0\t4\tA"])
+    left_ge = GenomicElements(str(left), str(schema), str(TINY_FA))
+    try:
+        _write_schema(
+            schema,
+            base_type="bed3",
+            extra_columns=[
+                {"name": "label", "dtype": "str"},
+                {"name": "count", "dtype": "int"},
+            ],
+        )
+        right = _write_bed(tmp_path / "right.bed", ["chr1\t10\t14\tB\t9"])
+        right_ge = GenomicElements(str(right), str(schema), str(TINY_FA))
+        try:
+            with pytest.raises(ValueError, match="schema"):
+                GenomicElements.merge_genomic_elements(
+                    left_ge,
+                    right_ge,
+                    str(tmp_path / "out.bed"),
+                    [],
+                    sort_new_ge=False,
+                )
+        finally:
+            right_ge.close()
+    finally:
+        left_ge.close()
+

@@ -784,3 +784,508 @@ def test_installed_console_named_format_regression(clean_install_env, tmp_path: 
     )
     assert result.returncode == 0
     assert _read_bed_lines(out) == [["chrA", "3", "9"]]
+
+# ---------------------------------------------------------------------------
+# Context dual selectors (SPEC010/011)
+# ---------------------------------------------------------------------------
+
+
+CONTEXT_PARSER_PATHS = (
+    ("get_context_ge", "nearest"),
+    ("get_context_ge", "windowed_argmax"),
+)
+
+
+@pytest.mark.parametrize("path", CONTEXT_PARSER_PATHS)
+def test_spec010_context_requires_independent_named_or_custom_schema(path):
+    """Context inputs require their own mutually exclusive schema selector (SPEC010)."""
+    parser = _parser_at(path)
+    option_strings = {flag for a in parser._actions for flag in a.option_strings}
+    assert "--context_file_path" in option_strings
+    assert "--context_file_type" in option_strings
+    assert "--context_file_schema" in option_strings
+
+    type_action = next(
+        a for a in parser._actions if "--context_file_type" in a.option_strings
+    )
+    schema_action = next(
+        a for a in parser._actions if "--context_file_schema" in a.option_strings
+    )
+    assert type_action.dest == schema_action.dest == "context_file_type"
+    assert schema_action.choices is None
+    mex_groups = [
+        g
+        for g in getattr(parser, "_mutually_exclusive_groups", [])
+        if type_action in g._group_actions and schema_action in g._group_actions
+    ]
+    assert len(mex_groups) == 1
+    assert mex_groups[0].required is True
+
+
+def test_spec011_nearest_preserves_custom_context_schema(tmp_path: Path):
+    """Nearest context selection preserves ordered custom context columns (SPEC011)."""
+    query_schema = _write_schema(
+        tmp_path / "query.json",
+        base_type="bed3",
+        extra_columns=[{"name": "qid", "dtype": "str"}],
+    )
+    context_schema = _write_schema(
+        tmp_path / "context.json",
+        base_type="bed3",
+        extra_columns=[
+            {"name": "label", "dtype": "str"},
+            {"name": "score", "dtype": "float"},
+        ],
+    )
+    query = _write_bed(tmp_path / "query.bed", ["chrA\t10\t20\tq1"])
+    context = _write_bed(
+        tmp_path / "context.bed",
+        [
+            "chrA\t0\t5\tfar\t1.0",
+            "chrA\t18\t22\tnear\t2.5",
+            "chrA\t40\t50\talso\t3.0",
+        ],
+    )
+    out = tmp_path / "out.bed"
+    _run_cli(
+        [
+            "get_context_ge",
+            "nearest",
+            "--region_file_path",
+            str(query),
+            "--region_file_schema",
+            str(query_schema),
+            "--context_file_path",
+            str(context),
+            "--context_file_schema",
+            str(context_schema),
+            "--opath",
+            str(out),
+        ]
+    )
+    assert _read_bed_lines(out) == [["chrA", "18", "22", "near", "2.5"]]
+    assert not (tmp_path / "out.bed.schema.json").exists()
+
+
+def test_spec011_windowed_argmax_preserves_custom_context_schema(tmp_path: Path):
+    """Windowed argmax preserves custom context schema and query order (SPEC011)."""
+    query = _write_bed(
+        tmp_path / "windows.bed",
+        ["chrA\t0\t30", "chrA\t30\t60"],
+    )
+    context_schema = _write_schema(
+        tmp_path / "context.json",
+        base_type="bed3",
+        extra_columns=[{"name": "label", "dtype": "str"}],
+    )
+    context = _write_bed(
+        tmp_path / "context.bed",
+        [
+            "chrA\t5\t10\ta",
+            "chrA\t15\t20\tb",
+            "chrA\t35\t40\tc",
+            "chrA\t45\t50\td",
+        ],
+    )
+    stat = tmp_path / "stat.npy"
+    np.save(stat, np.array([1.0, 9.0, 4.0, 2.0]))
+    out = tmp_path / "out.bed"
+    _run_cli(
+        [
+            "get_context_ge",
+            "windowed_argmax",
+            "--region_file_path",
+            str(query),
+            "--region_file_type",
+            "bed3",
+            "--context_file_path",
+            str(context),
+            "--context_file_schema",
+            str(context_schema),
+            "--context_stat_path",
+            str(stat),
+            "--opath",
+            str(out),
+        ]
+    )
+    assert _read_bed_lines(out) == [
+        ["chrA", "15", "20", "b"],
+        ["chrA", "35", "40", "c"],
+    ]
+
+
+def test_spec011_context_invalid_schema_fails_before_output(tmp_path: Path):
+    """Context schema failures occur before output creation (SPEC011)."""
+    query = _write_bed(tmp_path / "query.bed3", ["chrA\t10\t20"])
+    context = _write_bed(tmp_path / "context.bed", ["chrA\t0\t5\tx"])
+    bad_schema = tmp_path / "bad.json"
+    bad_schema.write_text("{")
+    out = tmp_path / "should_not_exist.bed"
+    with pytest.raises(ValueError):
+        _run_cli(
+            [
+                "get_context_ge",
+                "nearest",
+                "--region_file_path",
+                str(query),
+                "--region_file_type",
+                "bed3",
+                "--context_file_path",
+                str(context),
+                "--context_file_schema",
+                str(bad_schema),
+                "--opath",
+                str(out),
+            ]
+        )
+    assert not out.exists()
+
+
+# ---------------------------------------------------------------------------
+# Merge CLI schema ownership (SPEC010/014)
+# ---------------------------------------------------------------------------
+
+
+def test_spec010_merged_ge_requires_named_or_custom_schema():
+    """MergedGE exposes mutually exclusive named/custom schema selectors (SPEC010)."""
+    parser = _parser_at(("export", "MergedGE"))
+    option_strings = {flag for a in parser._actions for flag in a.option_strings}
+    assert "--region_file_type" in option_strings
+    assert "--region_file_schema" in option_strings
+    type_action = next(
+        a for a in parser._actions if "--region_file_type" in a.option_strings
+    )
+    schema_action = next(
+        a for a in parser._actions if "--region_file_schema" in a.option_strings
+    )
+    assert type_action.dest == schema_action.dest == "region_file_type"
+    mex_groups = [
+        g
+        for g in getattr(parser, "_mutually_exclusive_groups", [])
+        if type_action in g._group_actions and schema_action in g._group_actions
+    ]
+    assert len(mex_groups) == 1
+    assert mex_groups[0].required is True
+
+
+def test_spec014_custom_merge_uses_bed3plus_suffix_and_no_sidecar(tmp_path: Path):
+    """Compatible custom MergedGE writes .bed3plus without schema sidecars (SPEC014)."""
+    schema = _write_schema(
+        tmp_path / "meta.json",
+        base_type="bed3",
+        extra_columns=[{"name": "label", "dtype": "str"}],
+    )
+    left = _write_bed(tmp_path / "left.bed", ["chr2\t100\t110\tL"])
+    right = _write_bed(tmp_path / "right.bed", ["chr1\t50\t60\tR"])
+    left_stat = tmp_path / "left.stat.npy"
+    right_stat = tmp_path / "right.stat.npy"
+    np.save(left_stat, np.array([100.0]))
+    np.save(right_stat, np.array([10.0]))
+    oheader = tmp_path / "merged"
+    _run_cli(
+        [
+            "export",
+            "MergedGE",
+            "--left_region_file_path",
+            str(left),
+            "--right_region_file_path",
+            str(right),
+            "--region_file_schema",
+            str(schema),
+            "--anno_name",
+            "stat",
+            "--left_anno_path",
+            str(left_stat),
+            "--right_anno_path",
+            str(right_stat),
+            "--anno_type",
+            "stat",
+            "--oheader",
+            str(oheader),
+        ]
+    )
+    out = Path(str(oheader) + ".bed3plus")
+    assert out.exists()
+    assert not Path(str(oheader) + ".bed3").exists()
+    assert _read_bed_lines(out) == [
+        ["chr1", "50", "60", "R"],
+        ["chr2", "100", "110", "L"],
+    ]
+    assert list(tmp_path.glob("*.json")) == [schema]
+
+
+def test_spec014_custom_merge_uses_bed6plus_suffix(tmp_path: Path):
+    """Compatible custom MergedGE BED6+ outputs use .bed6plus (SPEC014)."""
+    schema = _write_schema(
+        tmp_path / "meta.json",
+        base_type="bed6",
+        extra_columns=[{"name": "note", "dtype": "str"}],
+    )
+    left = _write_bed(
+        tmp_path / "left.bed",
+        ["chr2\t100\t110\tn1\t1.0\t+\tL"],
+    )
+    right = _write_bed(
+        tmp_path / "right.bed",
+        ["chr1\t50\t60\tn2\t2.0\t-\tR"],
+    )
+    left_stat = tmp_path / "left.stat.npy"
+    right_stat = tmp_path / "right.stat.npy"
+    np.save(left_stat, np.array([1.0]))
+    np.save(right_stat, np.array([2.0]))
+    oheader = tmp_path / "merged"
+    _run_cli(
+        [
+            "export",
+            "MergedGE",
+            "--left_region_file_path",
+            str(left),
+            "--right_region_file_path",
+            str(right),
+            "--region_file_schema",
+            str(schema),
+            "--anno_name",
+            "stat",
+            "--left_anno_path",
+            str(left_stat),
+            "--right_anno_path",
+            str(right_stat),
+            "--anno_type",
+            "stat",
+            "--oheader",
+            str(oheader),
+        ]
+    )
+    out = Path(str(oheader) + ".bed6plus")
+    assert out.exists()
+    assert _read_bed_lines(out)[0][:3] == ["chr1", "50", "60"]
+
+
+def test_spec014_named_merge_suffix_unchanged(tmp_path: Path):
+    """Named MergedGE retains existing .<named-format> suffix (SPEC014)."""
+    left = _write_bed(tmp_path / "left.bed3", ["chr2\t100\t110"])
+    right = _write_bed(tmp_path / "right.bed3", ["chr1\t50\t60"])
+    left_stat = tmp_path / "left.stat.npy"
+    right_stat = tmp_path / "right.stat.npy"
+    np.save(left_stat, np.array([100.0]))
+    np.save(right_stat, np.array([10.0]))
+    oheader = tmp_path / "merged"
+    _run_cli(
+        [
+            "export",
+            "MergedGE",
+            "--left_region_file_path",
+            str(left),
+            "--right_region_file_path",
+            str(right),
+            "--region_file_type",
+            "bed3",
+            "--anno_name",
+            "stat",
+            "--left_anno_path",
+            str(left_stat),
+            "--right_anno_path",
+            str(right_stat),
+            "--anno_type",
+            "stat",
+            "--oheader",
+            str(oheader),
+        ]
+    )
+    assert Path(str(oheader) + ".bed3").exists()
+
+
+def test_spec014_custom_merge_rejects_distinct_schema_files(tmp_path: Path):
+    """Distinct custom schema files are rejected even when structurally equal (SPEC014)."""
+    schema_a = _write_schema(
+        tmp_path / "a.json",
+        base_type="bed3",
+        extra_columns=[{"name": "label", "dtype": "str"}],
+    )
+    schema_b = _write_schema(
+        tmp_path / "b.json",
+        base_type="bed3",
+        extra_columns=[{"name": "label", "dtype": "str"}],
+    )
+    left = _write_bed(tmp_path / "left.bed", ["chr1\t0\t4\tA"])
+    right = _write_bed(tmp_path / "right.bed", ["chr1\t10\t14\tB"])
+    oheader = tmp_path / "merged"
+    left_ge = GenomicElements(str(left), str(schema_a), None)
+    right_ge = GenomicElements(str(right), str(schema_b), None)
+    try:
+        with pytest.raises(ValueError, match="schema"):
+            GenomicElements.merge_genomic_elements(
+                left_ge,
+                right_ge,
+                str(oheader) + ".bed3plus",
+                [],
+                sort_new_ge=False,
+            )
+    finally:
+        left_ge.close()
+        right_ge.close()
+    assert not Path(str(oheader) + ".bed3plus").exists()
+
+
+def test_installed_console_context_and_merge_custom_schema(clean_install_env, tmp_path: Path):
+    """Installed console covers custom context selection and accepted merge (SPEC010/011/014)."""
+    script = clean_install_env["scripts_dir"] / "GenomicElementTools"
+    query = _write_bed(tmp_path / "query.bed3", ["chrA\t10\t20"])
+    context_schema = _write_schema(
+        tmp_path / "context.json",
+        base_type="bed3",
+        extra_columns=[{"name": "label", "dtype": "str"}],
+    )
+    context = _write_bed(
+        tmp_path / "context.bed",
+        ["chrA\t0\t5\tfar", "chrA\t18\t22\tnear"],
+    )
+    context_out = tmp_path / "context_out.bed"
+    result = subprocess.run(
+        [
+            str(script),
+            "get_context_ge",
+            "nearest",
+            "--region_file_path",
+            str(query),
+            "--region_file_type",
+            "bed3",
+            "--context_file_path",
+            str(context),
+            "--context_file_schema",
+            str(context_schema),
+            "--opath",
+            str(context_out),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert _read_bed_lines(context_out) == [["chrA", "18", "22", "near"]]
+
+    merge_schema = _write_schema(
+        tmp_path / "merge.json",
+        base_type="bed3",
+        extra_columns=[{"name": "label", "dtype": "str"}],
+    )
+    left = _write_bed(tmp_path / "left.bed", ["chr2\t100\t110\tL"])
+    right = _write_bed(tmp_path / "right.bed", ["chr1\t50\t60\tR"])
+    left_stat = tmp_path / "left.stat.npy"
+    right_stat = tmp_path / "right.stat.npy"
+    np.save(left_stat, np.array([1.0]))
+    np.save(right_stat, np.array([2.0]))
+    oheader = tmp_path / "merged"
+    result = subprocess.run(
+        [
+            str(script),
+            "export",
+            "MergedGE",
+            "--left_region_file_path",
+            str(left),
+            "--right_region_file_path",
+            str(right),
+            "--region_file_schema",
+            str(merge_schema),
+            "--anno_name",
+            "stat",
+            "--left_anno_path",
+            str(left_stat),
+            "--right_anno_path",
+            str(right_stat),
+            "--anno_type",
+            "stat",
+            "--oheader",
+            str(oheader),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert Path(str(oheader) + ".bed3plus").exists()
+
+    schema_a = _write_schema(
+        tmp_path / "a.json",
+        base_type="bed3",
+        extra_columns=[{"name": "label", "dtype": "str"}],
+    )
+    schema_b = _write_schema(
+        tmp_path / "b.json",
+        base_type="bed3",
+        extra_columns=[{"name": "label", "dtype": "str"}],
+    )
+    reject_script = tmp_path / "reject_merge.py"
+    reject_script.write_text(
+        "from RGTools.GenomicElements import GenomicElements\n"
+        f"left = GenomicElements({str(left)!r}, {str(schema_a)!r}, None)\n"
+        f"right = GenomicElements({str(right)!r}, {str(schema_b)!r}, None)\n"
+        "try:\n"
+        "    GenomicElements.merge_genomic_elements("
+        f"left, right, {str(tmp_path / 'bad.bed3plus')!r}, [], sort_new_ge=False)\n"
+        "except ValueError as exc:\n"
+        "    assert 'schema' in str(exc).lower()\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit('expected rejection')\n"
+    )
+    reject = subprocess.run(
+        [str(clean_install_env["python"]), str(reject_script)],
+        capture_output=True,
+        text=True,
+    )
+    assert reject.returncode == 0, reject.stderr
+
+
+# ---------------------------------------------------------------------------
+# Final selector inventory (SPEC010)
+# ---------------------------------------------------------------------------
+
+
+NAMED_ONLY_PRIMARY_PARSER_PATHS = (
+    ("export", "bed6poly"),
+)
+
+MERGE_SCHEMA_PARSER_PATHS = (
+    ("export", "MergedGE"),
+)
+
+
+def test_spec010_final_inventory_generic_selectors_are_schema_aware():
+    """Every generic genomic-region selector is schema-aware where allowed (SPEC010)."""
+    for path in GENERIC_PRIMARY_PARSER_PATHS:
+        parser = _parser_at(path)
+        option_strings = {flag for a in parser._actions for flag in a.option_strings}
+        assert "--region_file_schema" in option_strings, path
+        assert "--region_file_type" in option_strings, path
+
+    for path in CONTEXT_PARSER_PATHS:
+        parser = _parser_at(path)
+        option_strings = {flag for a in parser._actions for flag in a.option_strings}
+        assert "--context_file_schema" in option_strings, path
+        assert "--context_file_type" in option_strings, path
+        assert "--region_file_schema" in option_strings, path
+
+    for path in MERGE_SCHEMA_PARSER_PATHS:
+        parser = _parser_at(path)
+        option_strings = {flag for a in parser._actions for flag in a.option_strings}
+        assert "--region_file_schema" in option_strings, path
+        assert "--region_file_type" in option_strings, path
+
+
+def test_spec010_final_inventory_named_only_ops_still_enforce_named_contract():
+    """Named-only operations still enforce their named contracts (SPEC010/014)."""
+    for path in NAMED_ONLY_PRIMARY_PARSER_PATHS:
+        parser = _parser_at(path)
+        option_strings = {flag for a in parser._actions for flag in a.option_strings}
+        assert "--region_file_type" in option_strings, path
+        assert "--region_file_schema" not in option_strings, path
+        type_action = next(
+            a for a in parser._actions if "--region_file_type" in a.option_strings
+        )
+        assert list(type_action.choices) == ["bed6"]
+
+    for path in (("select_tss_relative_track",), ("tss_relative_mutagenesis",)):
+        parser = _parser_at(path)
+        option_strings = {flag for a in parser._actions for flag in a.option_strings}
+        assert "--region_file_type" in option_strings
+        assert "--region_file_schema" in option_strings

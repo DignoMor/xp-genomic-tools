@@ -304,16 +304,7 @@ class GenomicElementExport:
                             required=True,
                             type=str,
                             )
-        parser.add_argument("--region_file_type",
-                            help="Type of the region file. "
-                                 "Valid types: {}".format(
-                                     list(GenomicElements.get_region_file_suffix2class_dict().keys())
-                                     ),
-                            required=True,
-                            default="bed3",
-                            type=str,
-                            choices=GenomicElements.get_region_file_suffix2class_dict().keys(),
-                            )
+        GenomicElements.set_parser_region_schema_selector(parser)
         parser.add_argument("--anno_name",
                             help="Annotation name to merge. Can be specified multiple times.",
                             action="append",
@@ -939,7 +930,8 @@ class GenomicElementExport:
             left_ge.load_region_anno_from_npy(anno_name, left_anno_path, anno_type=anno_type)
             right_ge.load_region_anno_from_npy(anno_name, right_anno_path, anno_type=anno_type)
 
-        output_region_path = args.oheader + "." + args.region_file_type
+        suffix = GenomicElements.merge_output_region_suffix(left_ge)
+        output_region_path = args.oheader + "." + suffix
         merged_ge = GenomicElements.merge_genomic_elements(left_ge,
                                                            right_ge,
                                                            output_region_path,

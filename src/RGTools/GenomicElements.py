@@ -226,6 +226,18 @@ class GenomicElements(GeneralElements):
         table_cls = BedTable3Plus if base_type == "bed3" else BedTable6Plus
         captured_names = list(extra_names)
         captured_dtypes = list(extra_dtypes)
+        dtype_names = {
+            str: "str",
+            int: "int",
+            float: "float",
+        }
+        structure = (
+            base_type,
+            tuple(
+                (name, dtype_names[dtype])
+                for name, dtype in zip(captured_names, captured_dtypes)
+            ),
+        )
 
         def factory(enable_sort=True):
             return table_cls(
@@ -234,7 +246,7 @@ class GenomicElements(GeneralElements):
                 enable_sort=enable_sort,
             )
 
-        identity = ("custom", os.path.realpath(str(schema_path)))
+        identity = ("custom", os.path.realpath(str(schema_path)), structure)
         return factory, identity
 
     @staticmethod
@@ -349,33 +361,139 @@ class GenomicElements(GeneralElements):
                             required=True,
                             type=str, 
                             )
+        GenomicElements._add_region_schema_selector(
+            parser,
+            type_option="--region_file_type",
+            schema_option="--region_file_schema",
+            dest="region_file_type",
+            named_help_prefix="Named region format (predefined schema).",
+            schema_help_prefix=(
+                "Path to a version-1 region-schema JSON file describing a "
+                "custom BED3+ or BED6+ table."
+            ),
+        )
 
+    @staticmethod
+    def set_parser_context_region(parser):
+        parser.add_argument(
+            "--context_file_path",
+            help="Path to the context region file.",
+            required=True,
+            type=str,
+        )
+        GenomicElements._add_region_schema_selector(
+            parser,
+            type_option="--context_file_type",
+            schema_option="--context_file_schema",
+            dest="context_file_type",
+            named_help_prefix="Named context region format (predefined schema).",
+            schema_help_prefix=(
+                "Path to a version-1 region-schema JSON file describing a "
+                "custom BED3+ or BED6+ context table."
+            ),
+        )
+
+    @staticmethod
+    def set_parser_region_schema_selector(parser, *, dest="region_file_type"):
+        """Add mutually exclusive named-format / custom-schema flags only."""
+        GenomicElements._add_region_schema_selector(
+            parser,
+            type_option="--region_file_type",
+            schema_option="--region_file_schema",
+            dest=dest,
+            named_help_prefix="Named region format (predefined schema).",
+            schema_help_prefix=(
+                "Path to a version-1 region-schema JSON file describing a "
+                "custom BED3+ or BED6+ table."
+            ),
+        )
+
+    @staticmethod
+    def _add_region_schema_selector(
+        parser,
+        *,
+        type_option,
+        schema_option,
+        dest,
+        named_help_prefix,
+        schema_help_prefix,
+    ):
         named_formats = list(
             GenomicElements.get_region_file_suffix2class_dict().keys()
         )
         selector = parser.add_mutually_exclusive_group(required=True)
         selector.add_argument(
-            "--region_file_type",
-            dest="region_file_type",
+            type_option,
+            dest=dest,
             help=(
-                "Named region format (predefined schema). "
+                f"{named_help_prefix} "
                 f"Valid named formats: {named_formats}."
             ),
             type=str,
             choices=named_formats,
         )
         selector.add_argument(
-            "--region_file_schema",
-            dest="region_file_type",
+            schema_option,
+            dest=dest,
             metavar="SCHEMA_PATH",
             help=(
-                "Path to a version-1 region-schema JSON file describing a "
-                "custom BED3+ or BED6+ table. Relative paths resolve from the "
-                "current working directory. Mutually exclusive with "
-                "--region_file_type."
+                f"{schema_help_prefix} Relative paths resolve from the "
+                f"current working directory. Mutually exclusive with "
+                f"{type_option}."
             ),
             type=str,
         )
+
+    @staticmethod
+    def _assert_merge_schema_compatible(left_ge, right_ge):
+        """
+        Require the same named format or the same canonical custom schema file
+        with structurally compatible snapshots.
+        """
+        left_id = left_ge._region_schema_identity
+        right_id = right_ge._region_schema_identity
+        if left_id == right_id:
+            return
+
+        left_kind = left_id[0]
+        right_kind = right_id[0]
+        if left_kind == "named" and right_kind == "named":
+            raise ValueError(
+                f"Cannot merge GenomicElements with different region schemas: "
+                f"named format {left_id[1]!r} vs {right_id[1]!r}."
+            )
+        if left_kind == "custom" and right_kind == "custom":
+            left_path, left_structure = left_id[1], left_id[2]
+            right_path, right_structure = right_id[1], right_id[2]
+            if left_path != right_path:
+                raise ValueError(
+                    "Cannot merge GenomicElements with custom schemas from "
+                    f"different files: {left_path!r} vs {right_path!r}."
+                )
+            raise ValueError(
+                "Cannot merge GenomicElements whose snapshotted custom schemas "
+                "are structurally incompatible even though they resolve to the "
+                f"same schema file {left_path!r}: {left_structure!r} vs "
+                f"{right_structure!r}."
+            )
+        raise ValueError(
+            "Cannot merge GenomicElements with incompatible region schemas: "
+            f"{left_id!r} vs {right_id!r}."
+        )
+
+    @staticmethod
+    def merge_output_region_suffix(ge):
+        """
+        Return the merge output region-file suffix for a collection.
+
+        Named formats keep their existing suffix spelling. Custom schemas use
+        `.bed3plus` or `.bed6plus` according to the snapshotted base type.
+        """
+        identity = ge._region_schema_identity
+        if identity[0] == "named":
+            return identity[1]
+        base_type = identity[2][0]
+        return "bed3plus" if base_type == "bed3" else "bed6plus"
 
     @staticmethod
     def merge_genomic_elements(left_ge, right_ge, output_region_path, anno2merge, sort_new_ge=True):
@@ -395,11 +513,7 @@ class GenomicElements(GeneralElements):
         if not isinstance(left_ge, GenomicElements) or not isinstance(right_ge, GenomicElements):
             raise ValueError("left_ge and right_ge must both be GenomicElements instances.")
 
-        if left_ge.region_file_type != right_ge.region_file_type:
-            raise ValueError(
-                f"Cannot merge GenomicElements with different region_file_type: "
-                f"{left_ge.region_file_type} vs {right_ge.region_file_type}"
-            )
+        GenomicElements._assert_merge_schema_compatible(left_ge, right_ge)
 
         if left_ge.fasta_path != right_ge.fasta_path:
             raise ValueError(
@@ -423,10 +537,13 @@ class GenomicElements(GeneralElements):
 
         new_bt.write(output_region_path)
 
-        result_ge = GenomicElements(output_region_path,
-                                    left_ge.region_file_type,
-                                    left_ge.fasta_path,
-                                    )
+        result_ge = GenomicElements._from_resolved_schema(
+            region_file_path=output_region_path,
+            region_file_type=left_ge.region_file_type,
+            fasta_path=left_ge.fasta_path,
+            schema_factory=left_ge._region_schema_factory,
+            schema_identity=left_ge._region_schema_identity,
+        )
 
         for anno_name in anno2merge:
             if anno_name not in left_ge._anno_arr_dict or anno_name not in right_ge._anno_arr_dict:
