@@ -119,11 +119,14 @@ class CountPairedBw:
                                  bw_mn_path=args.bw_mn,
                                  )
 
+        # Strand comes from resolved BED6 capability, not named-format spelling.
+        has_strand = "strand" in region_bt.column_names
+
         output_list = []
         for region in region_bt.iter_regions():
             if args.override_strand:
                 strand = args.override_strand
-            elif args.region_file_type == "bed3":
+            elif not has_strand:
                 strand = "."
             elif not region["strand"]:
                 strand = "."

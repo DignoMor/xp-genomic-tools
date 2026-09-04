@@ -349,17 +349,33 @@ class GenomicElements(GeneralElements):
                             required=True,
                             type=str, 
                             )
-        
-        parser.add_argument("--region_file_type",
-                            help="Type of the region file. "
-                                 "Valid types: {}".format(
-                                     list(GenomicElements.get_region_file_suffix2class_dict().keys())
-                                     ),
-                            required=True,
-                            default="bed3", 
-                            type=str, 
-                            choices=GenomicElements.get_region_file_suffix2class_dict().keys(),
-                            )
+
+        named_formats = list(
+            GenomicElements.get_region_file_suffix2class_dict().keys()
+        )
+        selector = parser.add_mutually_exclusive_group(required=True)
+        selector.add_argument(
+            "--region_file_type",
+            dest="region_file_type",
+            help=(
+                "Named region format (predefined schema). "
+                f"Valid named formats: {named_formats}."
+            ),
+            type=str,
+            choices=named_formats,
+        )
+        selector.add_argument(
+            "--region_file_schema",
+            dest="region_file_type",
+            metavar="SCHEMA_PATH",
+            help=(
+                "Path to a version-1 region-schema JSON file describing a "
+                "custom BED3+ or BED6+ table. Relative paths resolve from the "
+                "current working directory. Mutually exclusive with "
+                "--region_file_type."
+            ),
+            type=str,
+        )
 
     @staticmethod
     def merge_genomic_elements(left_ge, right_ge, output_region_path, anno2merge, sort_new_ge=True):

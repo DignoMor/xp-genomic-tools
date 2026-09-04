@@ -71,6 +71,7 @@ def test_shared_region_args_on_pad_region():
     }
     assert "--region_file_path" in option_strings
     assert "--region_file_type" in option_strings
+    assert "--region_file_schema" in option_strings
 
 
 def test_select_tss_relative_track_exposes_force_and_defaults():
