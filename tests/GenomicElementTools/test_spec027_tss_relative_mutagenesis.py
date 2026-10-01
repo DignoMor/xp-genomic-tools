@@ -814,6 +814,296 @@ def test_missing_chromosome_rejected_before_output(tmp_path: Path):
     assert not out.exists()
 
 
+def test_empty_regions_publish_empty_bundle_with_valid_rounds(tmp_path: Path):
+    """SPEC027: empty TREbed collections publish empty validated artifacts."""
+    work = tmp_path / "work"
+    work.mkdir()
+    regions = tmp_path / "empty.trebed"
+    regions.write_text("")
+    coords = np.empty((0, 1), dtype=np.int64)
+    np.save(work / "coords.npy", coords)
+    _write_fasta(work / "targets.fa", [("t1", "AAA")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "empty",
+                "coordinate_stat": "coords.npy",
+                "target_fasta": "targets.fa",
+                "strand": "+",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+
+    _run_cli(
+        _base_argv(
+            genome=GENOME,
+            regions=regions,
+            manifest=manifest,
+            output_dir=out,
+            write_replaced_windows=True,
+        )
+    )
+
+    assert (out / "sequences.fasta").read_bytes() == b""
+    assert (out / "manifest.tsv").read_text() == "\t".join(OUTPUT_MANIFEST_COLUMNS) + "\n"
+    assert (out / "replaced" / "empty.fasta").read_bytes() == b""
+
+
+def test_empty_regions_still_reject_invalid_rounds(tmp_path: Path):
+    """SPEC027: empty selection does not bypass round target validation."""
+    work = tmp_path / "work"
+    work.mkdir()
+    regions = tmp_path / "empty.trebed"
+    regions.write_text("")
+    np.save(work / "coords.npy", np.empty((0, 1), dtype=np.int64))
+    _write_fasta(work / "targets.fa", [("tA", "AAA"), ("tB", "CC")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "invalid",
+                "coordinate_stat": "coords.npy",
+                "target_fasta": "targets.fa",
+                "strand": "+",
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="equal length"):
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=regions,
+                manifest=manifest,
+                output_dir=tmp_path / "out",
+            )
+        )
+
+
+def test_destination_check_precedes_invalid_input_processing(tmp_path: Path):
+    """SPEC027: destination checks precede malformed input processing."""
+    manifest, out = _one_round_plus_setup(tmp_path)
+    out.mkdir()
+    (out / "sentinel.txt").write_text("keep")
+    missing_genome = tmp_path / "missing.fa"
+
+    with pytest.raises(OSError, match="existing output directory"):
+        _run_cli(
+            _base_argv(
+                genome=missing_genome,
+                regions=ONE_REGION,
+                manifest=manifest,
+                output_dir=out,
+            )
+        )
+    assert (out / "sentinel.txt").read_text() == "keep"
+
+
+def test_chromosome_check_precedes_round_loading(tmp_path: Path):
+    """SPEC027: genome coverage precedes round-manifest loading."""
+    work = tmp_path / "work"
+    work.mkdir()
+    regions = work / "missing_chrom.trebed"
+    regions.write_text("chrZ\t100\t110\tr1\t105\t105\n")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "sentinel.txt").write_bytes(b"prior bundle\n")
+    with pytest.raises(ValueError) as exc_info:
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=regions,
+                manifest=work / "missing-rounds.tsv",
+                output_dir=out,
+                force=True,
+            )
+        )
+    assert str(exc_info.value) == "Chromosome chrZ not found in the genome file."
+    assert (out / "sentinel.txt").read_bytes() == b"prior bundle\n"
+
+
+def test_mixed_strand_rejection_precedes_target_loading(tmp_path: Path):
+    """SPEC027: mixed-strand rejection precedes target and coordinate loading."""
+    work = tmp_path / "work"
+    work.mkdir()
+    # Paths must exist to pass round-manifest path validation; malformed
+    # contents prove that orientation consistency precedes their loading.
+    for name in ("missing1.npy", "missing2.npy", "missing1.fa", "missing2.fa"):
+        (work / name).touch()
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {"round_id": "plus", "coordinate_stat": "missing1.npy", "target_fasta": "missing1.fa", "strand": "+"},
+            {"round_id": "minus", "coordinate_stat": "missing2.npy", "target_fasta": "missing2.fa", "strand": "-"},
+        ],
+    )
+    with pytest.raises(ValueError, match="mixed strands"):
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=ONE_REGION,
+                manifest=manifest,
+                output_dir=tmp_path / "out",
+                output_orientation="strand",
+            )
+        )
+
+
+def test_target_group_comparison_precedes_placement_preflight(tmp_path: Path):
+    """SPEC027: loaded target-ID mismatch precedes placement preflight."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "c1.npy", [0])
+    _write_coord(work / "c2.npy", [0])
+    _write_fasta(work / "t1.fa", [("tA", "AAA")])
+    _write_fasta(work / "t2.fa", [("tB", "AAA")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {"round_id": "first", "coordinate_stat": "c1.npy", "target_fasta": "t1.fa", "strand": "+"},
+            {"round_id": "second", "coordinate_stat": "c2.npy", "target_fasta": "t2.fa", "strand": "+"},
+        ],
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "sentinel.txt").write_bytes(b"prior bundle\n")
+    with pytest.raises(ValueError) as exc_info:
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=ONE_REGION,
+                manifest=manifest,
+                output_dir=out,
+                force=True,
+            )
+        )
+    assert str(exc_info.value) == (
+        "Round second: target ID set ['tB'] must match first-round set ['tA']."
+    )
+    assert (out / "sentinel.txt").read_bytes() == b"prior bundle\n"
+
+
+def test_round_loading_completes_before_target_group_comparison(tmp_path: Path):
+    """SPEC027: all round inputs load before later target-ID comparison."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "c1.npy", [1])
+    _write_coord(work / "c2.npy", [1])
+    np.save(work / "c3.npy", np.asarray([[1.0]], dtype=np.float64))
+    _write_fasta(work / "t1.fa", [("tA", "AAA")])
+    _write_fasta(work / "t2.fa", [("tB", "AAA")])
+    _write_fasta(work / "t3.fa", [("tA", "AAA")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {"round_id": "first", "coordinate_stat": "c1.npy", "target_fasta": "t1.fa", "strand": "+"},
+            {"round_id": "mismatch", "coordinate_stat": "c2.npy", "target_fasta": "t2.fa", "strand": "+"},
+            {"round_id": "invalid-coord", "coordinate_stat": "c3.npy", "target_fasta": "t3.fa", "strand": "+"},
+        ],
+    )
+    with pytest.raises(ValueError) as exc_info:
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=ONE_REGION,
+                manifest=manifest,
+                output_dir=tmp_path / "out",
+            )
+        )
+    assert str(exc_info.value) == (
+        "Round invalid-coord: coordinate_stat must be integer-valued; "
+        "found dtype float64."
+    )
+
+
+@pytest.mark.parametrize(
+    ("round_id", "first_coordinates", "second_coordinates", "bad_region_row"),
+    [
+        ("first", [0, 0], [0, 0], 1),
+        ("first", [1, 0], [0, 0], 2),
+        ("second", [1, 1], [0, 0], 1),
+    ],
+)
+def test_placement_failures_are_round_then_region_major(
+    tmp_path: Path,
+    round_id: str,
+    first_coordinates: list[int],
+    second_coordinates: list[int],
+    bad_region_row: int,
+):
+    """SPEC027: placement failures retain round, region, and first-target order."""
+    work = tmp_path / "work"
+    work.mkdir()
+    regions = tmp_path / "two.trebed"
+    regions.write_text(
+        "chr1\t100\t110\tr1\t105\t105\n"
+        "chr1\t200\t210\tr2\t205\t205\n"
+    )
+    _write_coord(work / "c1.npy", first_coordinates)
+    _write_coord(work / "c2.npy", second_coordinates)
+    _write_fasta(work / "t1.fa", [("tA", "AAA"), ("tB", "CCC")])
+    _write_fasta(work / "t2.fa", [("tA", "GGG"), ("tB", "TTT")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {"round_id": "first", "coordinate_stat": "c1.npy", "target_fasta": "t1.fa", "strand": "+"},
+            {"round_id": "second", "coordinate_stat": "c2.npy", "target_fasta": "t2.fa", "strand": "+"},
+        ],
+    )
+    with pytest.raises(ValueError) as exc_info:
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=regions,
+                manifest=manifest,
+                output_dir=tmp_path / "out",
+            )
+        )
+    assert str(exc_info.value) == (
+        f"TSS-relative coordinate zero is invalid "
+        f"(round={round_id}, region_row={bad_region_row}, target=tA, coord=0)."
+    )
+
+
+def test_placement_failure_reports_round_region_and_first_target(tmp_path: Path):
+    """SPEC027: placement diagnostics retain round, region, target, and coordinate."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _write_coord(work / "coords.npy", [0])
+    _write_fasta(work / "targets.fa", [("tA", "AAA"), ("tB", "CCC")])
+    manifest = _write_manifest(
+        work / "rounds.tsv",
+        [
+            {
+                "round_id": "bad-round",
+                "coordinate_stat": "coords.npy",
+                "target_fasta": "targets.fa",
+                "strand": "+",
+            }
+        ],
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "sentinel.txt").write_bytes(b"prior bundle\n")
+    with pytest.raises(ValueError) as exc_info:
+        _run_cli(
+            _base_argv(
+                genome=GENOME,
+                regions=ONE_REGION,
+                manifest=manifest,
+                output_dir=out,
+                force=True,
+            )
+        )
+    assert str(exc_info.value) == (
+        "TSS-relative coordinate zero is invalid "
+        "(round=bad-round, region_row=1, target=tA, coord=0)."
+    )
+    assert (out / "sentinel.txt").read_bytes() == b"prior bundle\n"
+
+
 # --- Ticket 05: forced replacement / remnants ---
 
 
@@ -1324,5 +1614,3 @@ def test_mixed_strand_manifest_allowed_in_genomic_mode(tmp_path: Path):
     ).read_bytes()
     rows = _read_manifest(out_genomic / "manifest.tsv")
     assert [row["strand"] for row in rows] == ["+", "-"]
-
-
