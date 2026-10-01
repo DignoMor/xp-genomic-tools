@@ -1614,3 +1614,17 @@ def test_mixed_strand_manifest_allowed_in_genomic_mode(tmp_path: Path):
     ).read_bytes()
     rows = _read_manifest(out_genomic / "manifest.tsv")
     assert [row["strand"] for row in rows] == ["+", "-"]
+
+
+def test_spec027_reserved_chromosome_precedes_round_loading(tmp_path: Path):
+    """SPEC027 rejects reserved chromosome delimiters before loading rounds."""
+    genome = tmp_path / "reserved.fa"
+    genome.write_text(">chr|1\nACGTACGTAC\n")
+    regions = tmp_path / "reserved.trebed"
+    regions.write_text("chr|1\t0\t10\tr1\t5\t4\n")
+    with pytest.raises(ValueError) as exc_info:
+        _run_cli(_base_argv(
+            genome=genome, regions=regions,
+            manifest=tmp_path / "missing.tsv", output_dir=tmp_path / "out",
+        ))
+    assert str(exc_info.value) == "Chromosome 'chr|1' contains reserved delimiter '|'."
