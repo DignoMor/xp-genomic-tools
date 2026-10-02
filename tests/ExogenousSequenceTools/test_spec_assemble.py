@@ -463,6 +463,37 @@ def test_combine_duplicate_id_within_one_input(tmp_path: Path):
     assert not out.exists()
 
 
+def test_combine_ids_collide_only_after_literal_suffixing(tmp_path: Path):
+    """SPEC017: distinct input IDs that collide after suffixing raise ValueError."""
+    fasta_a = _write_fasta(tmp_path / "a.fa", ["x"], ["AAA"])
+    fasta_b = _write_fasta(tmp_path / "b.fa", ["x_b"], ["TTT"])
+    out = tmp_path / "out.fa"
+
+    with pytest.raises(ValueError, match=r"x_b") as excinfo:
+        _run_cli(
+            [
+                "assemble",
+                "combine",
+                "--input_fasta",
+                str(fasta_a),
+                "--id_suffix",
+                "_b",
+                "--input_fasta",
+                str(fasta_b),
+                "--id_suffix",
+                "",
+                "--output_fasta",
+                str(out),
+            ]
+        )
+
+    message = str(excinfo.value)
+    assert "x_b" in message
+    assert str(fasta_a) in message
+    assert str(fasta_b) in message
+    assert not out.exists()
+
+
 def test_combine_empty_inputs_write_empty_or_skip_records(tmp_path: Path):
     """SPEC017: empty combine inputs contribute no records; all-empty writes empty FASTA."""
     empty_a = tmp_path / "empty_a.fa"
