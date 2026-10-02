@@ -161,6 +161,152 @@ def test_barcode_writes_fasta_and_metadata_csv(tmp_path: Path):
     assert df["elem_seq"].tolist() == seqs
 
 
+def test_reverse_complement_preserves_order_and_iupac_case(tmp_path: Path):
+    """SPEC017: assemble reverse_complement rewrites records in order."""
+    fasta = _write_fasta(tmp_path / "in.fa", ["a", "b"], ["ACGTn", "RYk"])
+    out = tmp_path / "out.fa"
+
+    _run_cli(
+        [
+            "assemble",
+            "reverse_complement",
+            "--fasta",
+            str(fasta),
+            "--output_fasta",
+            str(out),
+        ]
+    )
+
+    ids, seqs = _read_fasta(out)
+    assert list(ids) == ["a", "b"]
+    assert seqs == ["nACGT", "mRY"]
+
+
+def test_reverse_complement_appends_id_suffix_literally(tmp_path: Path):
+    """SPEC017: --id_suffix is concatenated with no extra separator."""
+    fasta = _write_fasta(tmp_path / "in.fa", ["a", "b"], ["ACGTn", "RYk"])
+    out = tmp_path / "out.fa"
+
+    _run_cli(
+        [
+            "assemble",
+            "reverse_complement",
+            "--fasta",
+            str(fasta),
+            "--output_fasta",
+            str(out),
+            "--id_suffix",
+            "_rc",
+        ]
+    )
+
+    ids, seqs = _read_fasta(out)
+    assert list(ids) == ["a_rc", "b_rc"]
+    assert seqs == ["nACGT", "mRY"]
+
+
+def test_reverse_complement_rejects_non_iupac_without_output(tmp_path: Path):
+    """SPEC017: non-IUPAC base raises ValueError and leaves no output FASTA."""
+    fasta = _write_fasta(tmp_path / "in.fa", ["a"], ["ACGZ"])
+    out = tmp_path / "out.fa"
+
+    with pytest.raises(ValueError):
+        _run_cli(
+            [
+                "assemble",
+                "reverse_complement",
+                "--fasta",
+                str(fasta),
+                "--output_fasta",
+                str(out),
+            ]
+        )
+
+    assert not out.exists()
+
+
+def test_reverse_complement_rejects_duplicate_output_ids(tmp_path: Path):
+    """SPEC017: duplicate output IDs raise ValueError naming ID and source file."""
+    fasta = _write_fasta(tmp_path / "in.fa", ["a", "a"], ["AAA", "TTT"])
+    out = tmp_path / "out.fa"
+
+    with pytest.raises(ValueError, match=r"a") as excinfo:
+        _run_cli(
+            [
+                "assemble",
+                "reverse_complement",
+                "--fasta",
+                str(fasta),
+                "--output_fasta",
+                str(out),
+            ]
+        )
+
+    message = str(excinfo.value)
+    assert "a" in message
+    assert str(fasta) in message
+    assert not out.exists()
+
+
+def test_reverse_complement_empty_fasta_writes_empty_output(tmp_path: Path):
+    """SPEC017: empty input FASTA yields empty output FASTA."""
+    fasta = tmp_path / "in.fa"
+    fasta.write_text("")
+    out = tmp_path / "out.fa"
+
+    _run_cli(
+        [
+            "assemble",
+            "reverse_complement",
+            "--fasta",
+            str(fasta),
+            "--output_fasta",
+            str(out),
+        ]
+    )
+
+    assert out.exists()
+    assert out.read_text() == ""
+    ids, seqs = _read_fasta(out)
+    assert list(ids) == []
+    assert seqs == []
+
+
+def test_reverse_complement_refuses_existing_output_fasta(tmp_path: Path):
+    """SPEC017: existing --output_fasta is refused and left unchanged."""
+    fasta = _write_fasta(tmp_path / "in.fa", ["a"], ["AAA"])
+    out = tmp_path / "out.fa"
+    out.write_text(">keep\nGGG\n")
+
+    with pytest.raises(ValueError, match="already exists"):
+        _run_cli(
+            [
+                "assemble",
+                "reverse_complement",
+                "--fasta",
+                str(fasta),
+                "--output_fasta",
+                str(out),
+            ]
+        )
+
+    assert out.read_text() == ">keep\nGGG\n"
+
+
+def test_assemble_help_lists_reverse_complement():
+    """SPEC017: assemble --help lists reverse_complement with a description."""
+    parser = argparse.ArgumentParser()
+    ExogenousSequenceTools.set_parser(parser)
+    assemble_action = None
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            assemble_action = action.choices["assemble"]
+            break
+    help_text = assemble_action.format_help()
+    assert "reverse_complement" in help_text
+    assert "Reverse-complement" in help_text or "reverse-complement" in help_text
+
+
 def test_barcode_too_many_elements_raises(tmp_path: Path):
     """More elements than barcodes → ValueError (SPEC017)."""
     barcodes = _write_fasta(tmp_path / "bc.fa", ["bc1"], ["AT"])

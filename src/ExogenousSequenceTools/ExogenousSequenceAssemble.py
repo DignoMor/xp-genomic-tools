@@ -2,6 +2,7 @@
 import pandas as pd
 
 from RGTools.ExogenousSequences import ExogenousSequences
+from RGTools.utils import reverse_complement_iupac
 
 class ExogenousSequenceAssemble:
     @staticmethod
@@ -20,6 +21,12 @@ class ExogenousSequenceAssemble:
         parser_barcode = subparsers.add_parser("barcode", 
                                                help="Add barcode to the exogenous sequences.")
         ExogenousSequenceAssemble._set_parser_barcode(parser_barcode)
+
+        parser_reverse_complement = subparsers.add_parser(
+            "reverse_complement",
+            help="Reverse-complement every record of an exogenous FASTA (IUPAC, case-preserving).",
+        )
+        ExogenousSequenceAssemble._set_parser_reverse_complement(parser_reverse_complement)
 
     @staticmethod
     def _set_parser_add_adapter(parser):
@@ -105,6 +112,20 @@ class ExogenousSequenceAssemble:
                             choices=["5", "3", "5_3"],
                             default="5_3",
                             )
+
+    @staticmethod
+    def _set_parser_reverse_complement(parser):
+        ExogenousSequences.set_parser_exogenous_sequences(parser)
+        parser.add_argument(
+            "--output_fasta",
+            help="Path to the output fasta file.",
+            required=True,
+        )
+        parser.add_argument(
+            "--id_suffix",
+            help="Literal suffix appended to every output sequence ID.",
+            default="",
+        )
 
     @staticmethod
     def _add_adapter(args):
@@ -217,6 +238,46 @@ class ExogenousSequenceAssemble:
                            )
 
     @staticmethod
+    def _require_unique_output_ids(output_ids, source_paths):
+        first_sources = {}
+        for seq_id, source in zip(output_ids, source_paths):
+            if seq_id in first_sources:
+                named_sources = [first_sources[seq_id], source]
+                unique_sources = list(dict.fromkeys(named_sources))
+                raise ValueError(
+                    f"Duplicate output sequence ID {seq_id!r} from "
+                    f"{', '.join(unique_sources)}."
+                )
+            first_sources[seq_id] = source
+
+    @staticmethod
+    def _write_assemble_fasta(output_ids, output_seqs, output_fasta, source_paths):
+        ExogenousSequenceAssemble._require_unique_output_ids(output_ids, source_paths)
+        ExogenousSequences.write_sequences_to_fasta(
+            output_ids, output_seqs, output_fasta
+        )
+
+    @staticmethod
+    def _reverse_complement(args):
+        input_es = ExogenousSequences(args.fasta)
+        output_seq_ids = [
+            seq_id + args.id_suffix for seq_id in input_es.get_sequence_ids()
+        ]
+        source_paths = [args.fasta] * len(output_seq_ids)
+        ExogenousSequenceAssemble._require_unique_output_ids(
+            output_seq_ids, source_paths
+        )
+        output_seqs = [
+            reverse_complement_iupac(seq) for seq in input_es.get_all_region_seqs()
+        ]
+        ExogenousSequenceAssemble._write_assemble_fasta(
+            output_seq_ids,
+            output_seqs,
+            args.output_fasta,
+            source_paths,
+        )
+
+    @staticmethod
     def main(args):
         if args.operation == "add_adapter":
             ExogenousSequenceAssemble._add_adapter(args)
@@ -224,5 +285,7 @@ class ExogenousSequenceAssemble:
             ExogenousSequenceAssemble._concat(args)
         elif args.operation == "barcode":
             ExogenousSequenceAssemble._barcode(args)
+        elif args.operation == "reverse_complement":
+            ExogenousSequenceAssemble._reverse_complement(args)
         else:
             raise ValueError(f"Unknown operation: {args.operation}")
