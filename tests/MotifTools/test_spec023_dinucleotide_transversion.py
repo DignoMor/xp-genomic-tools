@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+import numpy as np
+
+from RGTools.MotifGeneration import generate_dinucleotide_transversion
 
 CODE_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = CODE_ROOT / "src"
@@ -35,8 +40,12 @@ def _write_meme(
     *,
     alphabet: str = "ACGT",
     header: str | None = None,
+    background: list[float] | None = None,
 ) -> Path:
-    bg = " ".join(f"{letter} 0.25" for letter in alphabet)
+    frequencies = background or [0.25] * len(alphabet)
+    bg = " ".join(
+        f"{letter} {frequency}" for letter, frequency in zip(alphabet, frequencies)
+    )
     matrix = "\n".join("  ".join(f"{value:.6f}" for value in row) for row in rows)
     width = len(rows)
     alength = len(alphabet)
@@ -317,9 +326,11 @@ def test_spec023_dinucleotide_transversion_help_lists_flags_without_seed(tmp_pat
     assert "--motif_name" in help_text
     assert "--output" in help_text
     assert "--force" in help_text
+    assert "--warn_score_cutoff" in help_text
+    assert "at or above" in help_text or "greater than or equal" in help_text
+    assert "stderr" in help_text.lower()
     assert "--seed" not in help_text
     assert "--method" not in help_text
-    assert "--warn_score_cutoff" not in help_text
 
 
 def test_spec023_dinucleotide_transversion_missing_required_flags_exit_2(tmp_path):
@@ -535,3 +546,352 @@ def test_spec023_dinucleotide_transversion_missing_parent_directory_exits_1(tmp_
     assert completed.returncode == 1
     assert not out.exists()
     assert "Traceback" not in completed.stderr
+
+
+# Independently computed log10 PWM scores: log10(p + 1e-10) - log10(0.25 + 1e-10).
+# FWD0: A=0.40 C=0.25 G=0.10 T=0.25 → target C; forward 0, reverse G = -0.3979400084
+# FWD1: A=0.35 C=0.26 G=0.09 T=0.30 → target C; forward 0.01703333929, reverse G = -0.4436974989
+# REV0: A=0.40 C=0.39 G=0.01 T=0.20 → target T; forward -0.09691001296, reverse A = 0.2041199826
+FWD0_FASTA = ">dinucleotide_transversion_FWD0\nC\n"
+FWD1_FASTA = ">dinucleotide_transversion_FWD1\nC\n"
+REV0_FASTA = ">dinucleotide_transversion_REV0\nT\n"
+FWD0_WARNING = (
+    "Warning: motif FWD0 scores 0 (forward) and -0.3979400084 "
+    "(reverse complement) against the source PWM; cutoff 0.\n"
+)
+FWD1_WARNING = (
+    "Warning: motif FWD1 scores 0.01703333929 (forward) and -0.4436974989 "
+    "(reverse complement) against the source PWM; cutoff 0.\n"
+)
+REV0_WARNING = (
+    "Warning: motif REV0 scores -0.09691001296 (forward) and 0.2041199826 "
+    "(reverse complement) against the source PWM; cutoff 0.\n"
+)
+
+
+def test_spec023_dinucleotide_transversion_below_cutoff_emits_no_motif_warning(tmp_path):
+    """SPEC023: below-cutoff successful runs emit no source-motif warning."""
+    out = tmp_path / "dtv.fasta"
+    completed = _run_motiftools(
+        "dinucleotide_transversion",
+        "--motif_file",
+        str(TINY_MEME),
+        "--motif_name",
+        "SPEC_TINY",
+        "--output",
+        str(out),
+        cwd=tmp_path,
+    )
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+    assert completed.stderr == ""
+    assert out.read_text(encoding="utf-8") == TINY_FASTA
+
+
+def test_spec023_dinucleotide_transversion_exact_cutoff_equality_warns(tmp_path):
+    """SPEC023: a strand score equal to the cutoff warns, succeeds, and keeps FASTA."""
+    meme = _write_meme(
+        tmp_path / "fwd0.meme",
+        "FWD0",
+        [[0.40, 0.25, 0.10, 0.25]],
+    )
+    out = tmp_path / "dtv.fasta"
+    completed = _run_motiftools(
+        "dinucleotide_transversion",
+        "--motif_file",
+        str(meme),
+        "--motif_name",
+        "FWD0",
+        "--output",
+        str(out),
+        cwd=tmp_path,
+    )
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+    assert completed.stderr == FWD0_WARNING
+    assert out.read_text(encoding="utf-8") == FWD0_FASTA
+
+
+def test_spec023_dinucleotide_transversion_forward_match_warns_on_stderr(tmp_path):
+    """SPEC023: a forward-only residual match warns with both scores and the cutoff."""
+    meme = _write_meme(
+        tmp_path / "fwd1.meme",
+        "FWD1",
+        [[0.35, 0.26, 0.09, 0.30]],
+    )
+    out = tmp_path / "dtv.fasta"
+    completed = _run_motiftools(
+        "dinucleotide_transversion",
+        "--motif_file",
+        str(meme),
+        "--motif_name",
+        "FWD1",
+        "--output",
+        str(out),
+        cwd=tmp_path,
+    )
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+    assert completed.stderr == FWD1_WARNING
+    assert out.read_text(encoding="utf-8") == FWD1_FASTA
+
+
+def test_spec023_dinucleotide_transversion_reverse_only_match_warns(tmp_path):
+    """SPEC023: a reverse-complement-only residual match still warns."""
+    meme = _write_meme(
+        tmp_path / "rev0.meme",
+        "REV0",
+        [[0.40, 0.39, 0.01, 0.20]],
+    )
+    stdout_run = _run_motiftools(
+        "dinucleotide_transversion",
+        "--motif_file",
+        str(meme),
+        "--motif_name",
+        "REV0",
+        "--output",
+        "-",
+        cwd=tmp_path,
+    )
+    assert stdout_run.returncode == 0
+    assert stdout_run.stdout == REV0_FASTA
+    assert stdout_run.stderr == REV0_WARNING
+
+
+def test_spec023_dinucleotide_transversion_cutoff_change_leaves_fasta_bytes(tmp_path):
+    """SPEC023: changing --warn_score_cutoff never changes published FASTA bytes."""
+    meme = _write_meme(
+        tmp_path / "fwd1.meme",
+        "FWD1",
+        [[0.35, 0.26, 0.09, 0.30]],
+    )
+    warned = tmp_path / "warned.fasta"
+    quiet = tmp_path / "quiet.fasta"
+    run_warn = _run_motiftools(
+        "dinucleotide_transversion",
+        "--motif_file",
+        str(meme),
+        "--motif_name",
+        "FWD1",
+        "--output",
+        str(warned),
+        "--warn_score_cutoff",
+        "0",
+        cwd=tmp_path,
+    )
+    run_quiet = _run_motiftools(
+        "dinucleotide_transversion",
+        "--motif_file",
+        str(meme),
+        "--motif_name",
+        "FWD1",
+        "--output",
+        str(quiet),
+        "--warn_score_cutoff",
+        "1",
+        cwd=tmp_path,
+    )
+    assert run_warn.returncode == 0
+    assert run_quiet.returncode == 0
+    assert "Warning:" in run_warn.stderr
+    assert run_quiet.stderr == ""
+    assert warned.read_bytes() == quiet.read_bytes() == FWD1_FASTA.encode("utf-8")
+
+
+def test_spec023_dinucleotide_transversion_background_change_leaves_fasta_bytes(tmp_path):
+    """SPEC023: MEME background changes diagnostics only, not generated FASTA."""
+    rows = [[0.40, 0.25, 0.10, 0.25]]
+    uniform = _write_meme(tmp_path / "uniform.meme", "FWD0", rows)
+    skewed = _write_meme(
+        tmp_path / "skewed.meme",
+        "FWD0",
+        rows,
+        background=[0.70, 0.10, 0.10, 0.10],
+    )
+    uniform_out = tmp_path / "uniform.fasta"
+    skewed_out = tmp_path / "skewed.fasta"
+    uniform_run = _run_motiftools(
+        "dinucleotide_transversion",
+        "--motif_file",
+        str(uniform),
+        "--motif_name",
+        "FWD0",
+        "--output",
+        str(uniform_out),
+        cwd=tmp_path,
+    )
+    skewed_run = _run_motiftools(
+        "dinucleotide_transversion",
+        "--motif_file",
+        str(skewed),
+        "--motif_name",
+        "FWD0",
+        "--output",
+        str(skewed_out),
+        cwd=tmp_path,
+    )
+    assert uniform_run.returncode == 0
+    assert skewed_run.returncode == 0
+    assert uniform_out.read_bytes() == skewed_out.read_bytes() == FWD0_FASTA.encode("utf-8")
+    assert uniform_run.stderr != skewed_run.stderr
+
+
+def test_spec023_dinucleotide_transversion_nonfinite_cutoff_preserves_forced_destination(tmp_path):
+    """SPEC023: non-finite cutoffs fail before publication and keep a forced destination."""
+    out = tmp_path / "dtv.fasta"
+    out.write_text("placeholder", encoding="utf-8")
+    for value in ("inf", "-inf", "nan"):
+        completed = _run_motiftools(
+            "dinucleotide_transversion",
+            "--motif_file",
+            str(TINY_MEME),
+            "--motif_name",
+            "SPEC_TINY",
+            "--output",
+            str(out),
+            "--force",
+            "--warn_score_cutoff",
+            value,
+            cwd=tmp_path,
+        )
+        assert completed.returncode == 2
+        assert "Traceback" not in completed.stderr
+        assert out.read_text(encoding="utf-8") == "placeholder"
+        assert completed.stdout == ""
+
+
+def test_spec023_dinucleotide_transversion_invalid_cutoff_exits_2(tmp_path):
+    """SPEC023: non-numeric warning cutoffs fail before any target is published."""
+    out = tmp_path / "dtv.fasta"
+    completed = _run_motiftools(
+        "dinucleotide_transversion",
+        "--motif_file",
+        str(TINY_MEME),
+        "--motif_name",
+        "SPEC_TINY",
+        "--output",
+        str(out),
+        "--warn_score_cutoff",
+        "not-a-number",
+        cwd=tmp_path,
+    )
+    assert completed.returncode == 2
+    assert "Traceback" not in completed.stderr
+    assert not out.exists()
+
+
+def test_spec023_generate_dinucleotide_transversion_api_has_no_warning_threshold():
+    """SPEC021/023: reusable generation has no cutoff parameter or stderr policy."""
+    signature = inspect.signature(generate_dinucleotide_transversion)
+    assert list(signature.parameters) == ["meme", "motif_name"]
+
+
+def test_spec023_dinucleotide_transversion_composes_with_ordinary_offset_mutagenesis(tmp_path):
+    """SPEC023: generated FASTA replaces a 302-bp parent at an aligned ordinary offset."""
+    parent = ("ACGT" * 75) + "AC"
+    assert len(parent) == 302
+    parent_fa = tmp_path / "parent.fa"
+    parent_fa.write_text(">parent302\n" + parent + "\n", encoding="utf-8")
+    target = tmp_path / "target.fa"
+    generated = _run_motiftools(
+        "dinucleotide_transversion",
+        "--motif_file",
+        str(TINY_MEME),
+        "--motif_name",
+        "SPEC_TINY",
+        "--output",
+        str(target),
+        cwd=tmp_path,
+    )
+    assert generated.returncode == 0
+    assert target.read_text(encoding="utf-8") == TINY_FASTA
+    loc = tmp_path / "loc.npy"
+    np.save(loc, np.array([[10]], dtype=np.int64))
+    mutated = tmp_path / "mutated.fa"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(SRC_ROOT)
+    mutagen = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ExogenousSequenceTools",
+            "mutagenesis",
+            "--fasta",
+            str(parent_fa),
+            "--loc_npy",
+            str(loc),
+            "--mut_fasta",
+            str(target),
+            "--output_fasta",
+            str(mutated),
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert mutagen.returncode == 0, mutagen.stderr
+    text = mutated.read_text(encoding="utf-8")
+    assert text.startswith(">parent302_mut_dinucleotide_transversion_SPEC_TINY\n")
+    sequence = text.split("\n", 1)[1].replace("\n", "")
+    assert sequence == parent[:10] + "CAC" + parent[13:]
+    assert len(sequence) == 302
+
+
+def test_spec023_dinucleotide_transversion_minus_strand_caller_reverse_complements(tmp_path):
+    """SPEC023: callers reverse-complement the target for minus-strand hits; tools do not."""
+    parent = ("ACGT" * 75) + "AC"
+    parent_fa = tmp_path / "parent.fa"
+    parent_fa.write_text(">parent302\n" + parent + "\n", encoding="utf-8")
+    generated = tmp_path / "plus.fa"
+    plus = _run_motiftools(
+        "dinucleotide_transversion",
+        "--motif_file",
+        str(TINY_MEME),
+        "--motif_name",
+        "SPEC_TINY",
+        "--output",
+        str(generated),
+        cwd=tmp_path,
+    )
+    assert plus.returncode == 0
+    assert generated.read_text(encoding="utf-8") == TINY_FASTA
+    minus_target = tmp_path / "minus.fa"
+    minus_target.write_text(
+        ">dinucleotide_transversion_SPEC_TINY\nGTG\n",
+        encoding="utf-8",
+    )
+    loc = tmp_path / "loc.npy"
+    np.save(loc, np.array([[10]], dtype=np.int64))
+    mutated = tmp_path / "mutated.fa"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(SRC_ROOT)
+    mutagen = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ExogenousSequenceTools",
+            "mutagenesis",
+            "--fasta",
+            str(parent_fa),
+            "--loc_npy",
+            str(loc),
+            "--mut_fasta",
+            str(minus_target),
+            "--output_fasta",
+            str(mutated),
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert mutagen.returncode == 0, mutagen.stderr
+    text = mutated.read_text(encoding="utf-8")
+    assert text.startswith(">parent302_mut_dinucleotide_transversion_SPEC_TINY\n")
+    sequence = text.split("\n", 1)[1].replace("\n", "")
+    assert sequence == parent[:10] + "GTG" + parent[13:]
+    assert len(sequence) == 302
+    assert "GTG" not in generated.read_text(encoding="utf-8")

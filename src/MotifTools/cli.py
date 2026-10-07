@@ -54,9 +54,14 @@ class MotifTools:
                 "source-PWM probability product, breaking equal products "
                 "lexicographically A, C, G, T. An unmatched terminal chooses "
                 "its minimum-probability allowed transversion with the same "
-                "letter order. Original PWM orientation is retained. There is "
-                "no motif-knockout guarantee and no seed or method selector. "
-                "The FASTA identifier is dinucleotide_transversion_<motif_name>."
+                "letter order. Original PWM orientation is retained. Before "
+                "publication, the full-width target is scored against the "
+                "source motif on both strands with MemeMotif.calculate_pwm_score. "
+                "If either score is at or above --warn_score_cutoff (default 0), "
+                "a warning is emitted on stderr; FASTA bytes and exit status are "
+                "unchanged. There is no motif-knockout guarantee and no seed or "
+                "method selector. The FASTA identifier is "
+                "dinucleotide_transversion_<motif_name>."
             ),
         )
         DinucleotideTransversion.set_parser(parser_dtv)

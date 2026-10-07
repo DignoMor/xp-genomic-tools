@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import inspect
 import random
 from pathlib import Path
 
@@ -261,3 +262,9 @@ def test_spec021_generate_dinucleotide_transversion_agrees_with_cli():
     """SPEC021: API sequence matches the independently specified CLI FASTA body."""
     source = MemeMotif(str(TINY_MEME))
     assert generate_dinucleotide_transversion(source, "SPEC_TINY") == "CAC"
+
+
+def test_spec021_generate_dinucleotide_transversion_has_no_diagnostic_threshold():
+    """SPEC021: generation does not accept a warning cutoff or diagnostic policy."""
+    signature = inspect.signature(generate_dinucleotide_transversion)
+    assert list(signature.parameters) == ["meme", "motif_name"]
