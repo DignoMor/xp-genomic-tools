@@ -19,6 +19,7 @@ EXPECTED_SUBCOMMANDS = {
     "pwm_seq",
     "barcodes",
     "anti_motif",
+    "dinucleotide_transversion",
 }
 
 
@@ -48,6 +49,24 @@ def test_spec022_parser_registers_expected_subcommands():
     assert action.dest == "subcommand"
     assert set(action.choices) == EXPECTED_SUBCOMMANDS
     assert action.required is True
+
+
+def test_spec022_dinucleotide_transversion_flags():
+    """dinucleotide_transversion exposes required motif/output flags and optional --force (SPEC022)."""
+    action = _subparsers_action(_build_parser())
+    command = action.choices["dinucleotide_transversion"]
+    dests = {a.dest for a in command._actions}
+    assert {"motif_file", "motif_name", "output", "force"}.issubset(dests)
+    option_strings = {flag for a in command._actions for flag in a.option_strings}
+    assert {
+        "--motif_file",
+        "--motif_name",
+        "--output",
+        "--force",
+    }.issubset(option_strings)
+    assert "--seed" not in option_strings
+    assert "--method" not in option_strings
+    assert "--warn_score_cutoff" not in option_strings
 
 
 def test_spec022_anti_motif_flags():

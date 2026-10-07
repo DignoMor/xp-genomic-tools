@@ -10,7 +10,12 @@ import numpy as np
 import pytest
 
 from RGTools import MemeMotif
-from RGTools.MotifGeneration import iter_pwm_sequences, iter_random_sequences, make_anti_motifs
+from RGTools.MotifGeneration import (
+    generate_dinucleotide_transversion,
+    iter_pwm_sequences,
+    iter_random_sequences,
+    make_anti_motifs,
+)
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 TINY_MEME = FIXTURES / "spec" / "tiny.meme"
@@ -227,3 +232,32 @@ def test_spec021_iter_random_sequences_rejects_nonpositive_length():
     """Non-positive sequence lengths fail before yielding output."""
     with pytest.raises(ValueError, match="sequence_length"):
         list(iter_random_sequences(0, 1, seed=0))
+
+
+def test_spec021_generate_dinucleotide_transversion_never_mutates_source():
+    """SPEC021: generate_dinucleotide_transversion leaves PWM arrays and metadata unchanged."""
+    source = MemeMotif(str(TINY_MEME))
+    pwm_snapshot = source.get_motif_pwm("SPEC_TINY").copy()
+    info_snapshot = copy.deepcopy(source.motif_info_dict)
+    bg_snapshot = list(source.get_bg_freq())
+    names_snapshot = list(source.get_motif_list())
+
+    sequence = generate_dinucleotide_transversion(source, "SPEC_TINY")
+
+    assert sequence == "CAC"
+    assert source.get_motif_list() == names_snapshot
+    assert source.get_bg_freq() == bg_snapshot
+    assert set(source.motif_info_dict) == set(info_snapshot)
+    assert source.get_motif_num_source_sites("SPEC_TINY") == info_snapshot["SPEC_TINY"][
+        "num_source_sites"
+    ]
+    assert source.get_motif_source_eval("SPEC_TINY") == info_snapshot["SPEC_TINY"][
+        "source_eval"
+    ]
+    assert np.array_equal(source.get_motif_pwm("SPEC_TINY"), pwm_snapshot)
+
+
+def test_spec021_generate_dinucleotide_transversion_agrees_with_cli():
+    """SPEC021: API sequence matches the independently specified CLI FASTA body."""
+    source = MemeMotif(str(TINY_MEME))
+    assert generate_dinucleotide_transversion(source, "SPEC_TINY") == "CAC"
