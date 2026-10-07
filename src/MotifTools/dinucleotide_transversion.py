@@ -8,7 +8,7 @@ import sys
 from RGTools import MemeMotif
 from RGTools.MotifGeneration import generate_dinucleotide_transversion
 
-from .output import format_fasta, validate_output_flags, write_text_output
+from .output import format_fasta, preflight_text_output, write_text_output
 
 
 class DinucleotideTransversion:
@@ -48,7 +48,7 @@ class DinucleotideTransversion:
 
     @staticmethod
     def main(args):
-        validate_output_flags(args.output, args.force)
+        preflight_text_output(args.output, force=args.force)
         cutoff = args.warn_score_cutoff
         if not math.isfinite(cutoff):
             raise ValueError(
@@ -57,11 +57,11 @@ class DinucleotideTransversion:
             )
         meme = MemeMotif(args.motif_file)
         sequence = generate_dinucleotide_transversion(meme, args.motif_name)
-        _emit_source_motif_warning(meme, args.motif_name, sequence, cutoff)
         records = [
             (f"dinucleotide_transversion_{args.motif_name}", sequence),
         ]
         write_text_output(format_fasta(records), args.output, force=args.force)
+        _emit_source_motif_warning(meme, args.motif_name, sequence, cutoff)
 
 
 def _emit_source_motif_warning(meme, motif_name, sequence, cutoff):

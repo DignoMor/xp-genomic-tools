@@ -548,6 +548,55 @@ def test_spec023_dinucleotide_transversion_missing_parent_directory_exits_1(tmp_
     assert "Traceback" not in completed.stderr
 
 
+def _write_fwd0_meme(path: Path) -> Path:
+    return _write_meme(path, "FWD0", [[0.40, 0.25, 0.10, 0.25]])
+
+
+def test_spec023_dinucleotide_transversion_overwrite_refusal_emits_no_source_motif_warning(
+    tmp_path,
+):
+    """SPEC023: overwrite refusal exits 1 with no source-motif warning and no publish."""
+    meme = _write_fwd0_meme(tmp_path / "fwd0.meme")
+    out = tmp_path / "dtv.fasta"
+    out.write_text("placeholder", encoding="utf-8")
+    completed = _run_motiftools(
+        "dinucleotide_transversion",
+        "--motif_file",
+        str(meme),
+        "--motif_name",
+        "FWD0",
+        "--output",
+        str(out),
+        cwd=tmp_path,
+    )
+    assert completed.returncode == 1
+    assert out.read_text(encoding="utf-8") == "placeholder"
+    assert "Warning:" not in completed.stderr
+    assert "Traceback" not in completed.stderr
+
+
+def test_spec023_dinucleotide_transversion_missing_parent_emits_no_source_motif_warning(
+    tmp_path,
+):
+    """SPEC023: missing parents exit 1 with no source-motif warning and no publish."""
+    meme = _write_fwd0_meme(tmp_path / "fwd0.meme")
+    out = tmp_path / "missing" / "dtv.fasta"
+    completed = _run_motiftools(
+        "dinucleotide_transversion",
+        "--motif_file",
+        str(meme),
+        "--motif_name",
+        "FWD0",
+        "--output",
+        str(out),
+        cwd=tmp_path,
+    )
+    assert completed.returncode == 1
+    assert not out.exists()
+    assert "Warning:" not in completed.stderr
+    assert "Traceback" not in completed.stderr
+
+
 # Independently computed log10 PWM scores: log10(p + 1e-10) - log10(0.25 + 1e-10).
 # FWD0: A=0.40 C=0.25 G=0.10 T=0.25 → target C; forward 0, reverse G = -0.3979400084
 # FWD1: A=0.35 C=0.26 G=0.09 T=0.30 → target C; forward 0.01703333929, reverse G = -0.4436974989
