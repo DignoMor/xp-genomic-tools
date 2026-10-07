@@ -6,6 +6,7 @@ import argparse
 
 from .anti_motif import AntiMotif
 from .barcodes import Barcodes
+from .dinucleotide_transversion import DinucleotideTransversion
 from .pwm_seq import PwmSeq
 from .random_seq import RandomSeq
 
@@ -39,6 +40,32 @@ class MotifTools:
         )
         AntiMotif.set_parser(parser_anti)
 
+        parser_dtv = subparsers.add_parser(
+            "dinucleotide_transversion",
+            help=(
+                "Generate one deterministic PWM-derived dinucleotide "
+                "transversion target."
+            ),
+            description=(
+                "Select one named motif and emit one deterministic full-width "
+                "transversion FASTA. Consensus uses maximum-probability bases "
+                "with A, C, G, T letter ties. Pairs from position zero choose "
+                "the allowed transversion dinucleotide with the minimum "
+                "source-PWM probability product, breaking equal products "
+                "lexicographically A, C, G, T. An unmatched terminal chooses "
+                "its minimum-probability allowed transversion with the same "
+                "letter order. Original PWM orientation is retained. Before "
+                "publication, the full-width target is scored against the "
+                "source motif on both strands with MemeMotif.calculate_pwm_score. "
+                "If either score is at or above --warn_score_cutoff (default 0), "
+                "a warning is emitted on stderr; FASTA bytes and exit status are "
+                "unchanged. There is no motif-knockout guarantee and no seed or "
+                "method selector. The FASTA identifier is "
+                "dinucleotide_transversion_<motif_name>."
+            ),
+        )
+        DinucleotideTransversion.set_parser(parser_dtv)
+
     @staticmethod
     def main(args):
         if args.subcommand == "random_seq":
@@ -49,5 +76,7 @@ class MotifTools:
             Barcodes.main(args)
         elif args.subcommand == "anti_motif":
             AntiMotif.main(args)
+        elif args.subcommand == "dinucleotide_transversion":
+            DinucleotideTransversion.main(args)
         else:
             raise ValueError(f"Unknown subcommand: {args.subcommand}")

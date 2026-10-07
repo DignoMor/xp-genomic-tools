@@ -12,7 +12,13 @@ SRC_ROOT = CODE_ROOT / "src"
 FIXTURES = CODE_ROOT / "tests" / "fixtures"
 TINY_MEME = FIXTURES / "spec" / "tiny.meme"
 
-EXPECTED_COMMANDS = ("random_seq", "pwm_seq", "barcodes", "anti_motif")
+EXPECTED_COMMANDS = (
+    "random_seq",
+    "pwm_seq",
+    "barcodes",
+    "anti_motif",
+    "dinucleotide_transversion",
+)
 
 
 def _env() -> dict[str, str]:
@@ -47,7 +53,7 @@ def _run_console(*args: str, cwd: Path | None = None) -> subprocess.CompletedPro
 
 
 def test_spec022_acceptance_help_lists_exact_command_inventory():
-    """MotifTools --help exposes exactly the four delivered subcommands."""
+    """MotifTools --help exposes the delivered subcommand inventory."""
     completed = _run_module("--help")
     assert completed.returncode == 0
     for command in EXPECTED_COMMANDS:
@@ -105,6 +111,15 @@ def test_spec022_acceptance_all_commands_succeed_via_module_and_console(tmp_path
             "1",
             "--output",
             str(tmp_path / "barcodes.fasta"),
+        ],
+        [
+            "dinucleotide_transversion",
+            "--motif_file",
+            str(TINY_MEME),
+            "--motif_name",
+            "SPEC_TINY",
+            "--output",
+            str(tmp_path / "dtv.fasta"),
         ],
     )
     for index, argv in enumerate(cases):

@@ -26,9 +26,24 @@ def validate_output_flags(output: str, force: bool) -> None:
         raise ValueError("--output - cannot be combined with --force.")
 
 
+def preflight_text_output(output: str, *, force: bool = False) -> None:
+    """Reject invalid stdout/--force composition and unpublished path destinations."""
+    validate_output_flags(output, force)
+    if output == STDOUT_OUTPUT:
+        return
+    path = Path(output)
+    parent = path.parent
+    if not parent.exists():
+        raise OSError(f"Output parent directory does not exist: {parent}")
+    if path.exists() and not force:
+        raise OSError(
+            f"Refusing to overwrite existing file: {path} (use --force to replace it)"
+        )
+
+
 def write_text_output(text: str, output: str, *, force: bool = False) -> None:
     """Write ``text`` to ``output`` or stdout when ``output`` is ``-``."""
-    validate_output_flags(output, force)
+    preflight_text_output(output, force=force)
 
     if output == STDOUT_OUTPUT:
         sys.stdout.write(text)
@@ -36,13 +51,6 @@ def write_text_output(text: str, output: str, *, force: bool = False) -> None:
 
     path = Path(output)
     parent = path.parent
-    if not parent.exists():
-        raise OSError(f"Output parent directory does not exist: {parent}")
-
-    if path.exists() and not force:
-        raise OSError(
-            f"Refusing to overwrite existing file: {path} (use --force to replace it)"
-        )
 
     fd = None
     tmp_path = None
@@ -70,19 +78,14 @@ def write_text_output(text: str, output: str, *, force: bool = False) -> None:
 
 def write_meme_output(collection, output: str, *, force: bool = False) -> None:
     """Serialize a MemeMotif collection through the shared output contract."""
+    preflight_text_output(output, force=force)
+
     if output == STDOUT_OUTPUT:
         collection.write_meme_file(sys.stdout)
         return
 
     path = Path(output)
     parent = path.parent
-    if not parent.exists():
-        raise OSError(f"Output parent directory does not exist: {parent}")
-
-    if path.exists() and not force:
-        raise OSError(
-            f"Refusing to overwrite existing file: {path} (use --force to replace it)"
-        )
 
     fd = None
     tmp_path = None

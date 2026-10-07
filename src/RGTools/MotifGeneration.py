@@ -210,6 +210,152 @@ def iter_pwm_sequences(
         yield "".join(positions)
 
 
+_DNA_LETTERS = "ACGT"
+_TRANSVERSION_BASES = {
+    "A": "CT",
+    "G": "CT",
+    "C": "AG",
+    "T": "AG",
+}
+
+
+def generate_dinucleotide_transversion(meme: MemeMotif, motif_name: str) -> str:
+    """Return one deterministic PWM-derived transversion target for ``motif_name``.
+
+    Consensus uses maximum-probability bases with A, C, G, T letter ties.
+    Consecutive pairs from position zero select the allowed transversion
+    dinucleotide with the minimum source-PWM probability product, breaking
+    product ties lexicographically A, C, G, T. An unmatched odd-width
+    terminal uses the minimum-probability allowed transversion with the same
+    letter order. The source collection is never mutated.
+    """
+    pwm, alphabet = _validated_named_pwm(meme, motif_name)
+    if set(alphabet) != set(_DNA_LETTERS) or len(alphabet) != len(_DNA_LETTERS):
+        raise ValueError(
+            "Dinucleotide transversion requires a DNA alphabet containing "
+            f"exactly A, C, G, and T, found {alphabet!r}."
+        )
+    index_by_letter = {letter: index for index, letter in enumerate(alphabet)}
+    consensus = [
+        _consensus_base(pwm[row_index], index_by_letter)
+        for row_index in range(pwm.shape[0])
+    ]
+    bases: list[str] = []
+    width = len(consensus)
+    pair_start = 0
+    while pair_start + 1 < width:
+        bases.extend(
+            _pair_transversion(
+                pwm[pair_start],
+                pwm[pair_start + 1],
+                consensus[pair_start],
+                consensus[pair_start + 1],
+                index_by_letter,
+            )
+        )
+        pair_start += 2
+    if pair_start < width:
+        bases.append(
+            _terminal_transversion(
+                pwm[pair_start],
+                consensus[pair_start],
+                index_by_letter,
+            )
+        )
+    return "".join(bases)
+
+
+def _validated_named_pwm(meme: MemeMotif, motif_name: str):
+    motif_names = meme.get_motif_list()
+    if not motif_names:
+        raise ValueError("MEME collection must contain at least one motif.")
+    if motif_name not in meme.motif_info_dict:
+        available = ", ".join(motif_names)
+        raise ValueError(
+            f"Unknown motif name {motif_name!r}. Available motifs: {available}."
+        )
+
+    alphabet = meme.get_alphabet()
+    alphabet_length = len(alphabet)
+    motif_alphabet_length = meme.get_motif_alphabet_length(motif_name)
+    if motif_alphabet_length != alphabet_length:
+        raise ValueError(
+            f"Alphabet length mismatch for motif {motif_name!r}: collection has "
+            f"{alphabet_length} symbols but motif declares alength="
+            f"{motif_alphabet_length}."
+        )
+
+    pwm = np.asarray(meme.get_motif_pwm(motif_name), dtype=float)
+    motif_length = meme.get_motif_length(motif_name)
+    if pwm.shape != (motif_length, alphabet_length):
+        raise ValueError(
+            f"PWM shape mismatch for motif {motif_name!r}: expected "
+            f"({motif_length}, {alphabet_length}), found {pwm.shape}."
+        )
+    MemeMotif._validate_pwm(pwm, motif_name)
+    return pwm, alphabet
+
+
+def _consensus_base(row: np.ndarray, index_by_letter: dict[str, int]) -> str:
+    chosen = _DNA_LETTERS[0]
+    best_probability = float(row[index_by_letter[chosen]])
+    for letter in _DNA_LETTERS[1:]:
+        probability = float(row[index_by_letter[letter]])
+        if probability > best_probability:
+            best_probability = probability
+            chosen = letter
+    return chosen
+
+
+def _pair_transversion(
+    row_left: np.ndarray,
+    row_right: np.ndarray,
+    consensus_left: str,
+    consensus_right: str,
+    index_by_letter: dict[str, int],
+) -> str:
+    allowed_left = _TRANSVERSION_BASES[consensus_left]
+    allowed_right = _TRANSVERSION_BASES[consensus_right]
+    chosen = None
+    best_product = None
+    for left in _DNA_LETTERS:
+        if left not in allowed_left:
+            continue
+        for right in _DNA_LETTERS:
+            if right not in allowed_right:
+                continue
+            product = (
+                float(row_left[index_by_letter[left]])
+                * float(row_right[index_by_letter[right]])
+            )
+            if best_product is None or product < best_product:
+                best_product = product
+                chosen = left + right
+    if chosen is None:
+        raise ValueError("No allowed dinucleotide transversion candidates.")
+    return chosen
+
+
+def _terminal_transversion(
+    row: np.ndarray,
+    consensus: str,
+    index_by_letter: dict[str, int],
+) -> str:
+    allowed = _TRANSVERSION_BASES[consensus]
+    chosen = None
+    best_probability = None
+    for letter in _DNA_LETTERS:
+        if letter not in allowed:
+            continue
+        probability = float(row[index_by_letter[letter]])
+        if best_probability is None or probability < best_probability:
+            best_probability = probability
+            chosen = letter
+    if chosen is None:
+        raise ValueError("No allowed terminal transversion candidates.")
+    return chosen
+
+
 def iter_random_sequences(
     sequence_length: int,
     num_sequences: int,

@@ -161,6 +161,445 @@ def test_barcode_writes_fasta_and_metadata_csv(tmp_path: Path):
     assert df["elem_seq"].tolist() == seqs
 
 
+def test_reverse_complement_preserves_order_and_iupac_case(tmp_path: Path):
+    """SPEC017: assemble reverse_complement rewrites records in order."""
+    fasta = _write_fasta(tmp_path / "in.fa", ["a", "b"], ["ACGTn", "RYk"])
+    out = tmp_path / "out.fa"
+
+    _run_cli(
+        [
+            "assemble",
+            "reverse_complement",
+            "--fasta",
+            str(fasta),
+            "--output_fasta",
+            str(out),
+        ]
+    )
+
+    ids, seqs = _read_fasta(out)
+    assert list(ids) == ["a", "b"]
+    assert seqs == ["nACGT", "mRY"]
+
+
+def test_reverse_complement_appends_id_suffix_literally(tmp_path: Path):
+    """SPEC017: --id_suffix is concatenated with no extra separator."""
+    fasta = _write_fasta(tmp_path / "in.fa", ["a", "b"], ["ACGTn", "RYk"])
+    out = tmp_path / "out.fa"
+
+    _run_cli(
+        [
+            "assemble",
+            "reverse_complement",
+            "--fasta",
+            str(fasta),
+            "--output_fasta",
+            str(out),
+            "--id_suffix",
+            "_rc",
+        ]
+    )
+
+    ids, seqs = _read_fasta(out)
+    assert list(ids) == ["a_rc", "b_rc"]
+    assert seqs == ["nACGT", "mRY"]
+
+
+def test_reverse_complement_rejects_non_iupac_without_output(tmp_path: Path):
+    """SPEC017: non-IUPAC base raises ValueError and leaves no output FASTA."""
+    fasta = _write_fasta(tmp_path / "in.fa", ["a"], ["ACGZ"])
+    out = tmp_path / "out.fa"
+
+    with pytest.raises(ValueError):
+        _run_cli(
+            [
+                "assemble",
+                "reverse_complement",
+                "--fasta",
+                str(fasta),
+                "--output_fasta",
+                str(out),
+            ]
+        )
+
+    assert not out.exists()
+
+
+def test_reverse_complement_rejects_duplicate_output_ids(tmp_path: Path):
+    """SPEC017: duplicate output IDs raise ValueError naming ID and source file."""
+    fasta = _write_fasta(tmp_path / "in.fa", ["a", "a"], ["AAA", "TTT"])
+    out = tmp_path / "out.fa"
+
+    with pytest.raises(ValueError, match=r"a") as excinfo:
+        _run_cli(
+            [
+                "assemble",
+                "reverse_complement",
+                "--fasta",
+                str(fasta),
+                "--output_fasta",
+                str(out),
+            ]
+        )
+
+    message = str(excinfo.value)
+    assert "a" in message
+    assert str(fasta) in message
+    assert not out.exists()
+
+
+def test_reverse_complement_empty_fasta_writes_empty_output(tmp_path: Path):
+    """SPEC017: empty input FASTA yields empty output FASTA."""
+    fasta = tmp_path / "in.fa"
+    fasta.write_text("")
+    out = tmp_path / "out.fa"
+
+    _run_cli(
+        [
+            "assemble",
+            "reverse_complement",
+            "--fasta",
+            str(fasta),
+            "--output_fasta",
+            str(out),
+        ]
+    )
+
+    assert out.exists()
+    assert out.read_text() == ""
+    ids, seqs = _read_fasta(out)
+    assert list(ids) == []
+    assert seqs == []
+
+
+def test_reverse_complement_refuses_existing_output_fasta(tmp_path: Path):
+    """SPEC017: existing --output_fasta is refused and left unchanged."""
+    fasta = _write_fasta(tmp_path / "in.fa", ["a"], ["AAA"])
+    out = tmp_path / "out.fa"
+    out.write_text(">keep\nGGG\n")
+
+    with pytest.raises(ValueError, match="already exists"):
+        _run_cli(
+            [
+                "assemble",
+                "reverse_complement",
+                "--fasta",
+                str(fasta),
+                "--output_fasta",
+                str(out),
+            ]
+        )
+
+    assert out.read_text() == ">keep\nGGG\n"
+
+
+def test_combine_stacks_inputs_in_cli_order_with_literal_suffixes(tmp_path: Path):
+    """SPEC017: assemble combine stacks collections in CLI order; sequences unchanged."""
+    fasta_a = _write_fasta(tmp_path / "a.fa", ["x", "y"], ["AAA", "CCC"])
+    fasta_b = _write_fasta(tmp_path / "b.fa", ["x", "z"], ["GGG", "TTT"])
+    out = tmp_path / "out.fa"
+
+    _run_cli(
+        [
+            "assemble",
+            "combine",
+            "--input_fasta",
+            str(fasta_a),
+            "--id_suffix",
+            "",
+            "--input_fasta",
+            str(fasta_b),
+            "--id_suffix",
+            "_b",
+            "--output_fasta",
+            str(out),
+        ]
+    )
+
+    ids, seqs = _read_fasta(out)
+    assert list(ids) == ["x", "y", "x_b", "z_b"]
+    assert seqs == ["AAA", "CCC", "GGG", "TTT"]
+
+
+def test_combine_single_input_appends_id_suffix(tmp_path: Path):
+    """SPEC017: assemble combine succeeds with one --input_fasta and its --id_suffix."""
+    fasta = _write_fasta(tmp_path / "a.fa", ["x"], ["AAA"])
+    out = tmp_path / "out.fa"
+
+    _run_cli(
+        [
+            "assemble",
+            "combine",
+            "--input_fasta",
+            str(fasta),
+            "--id_suffix",
+            "_a",
+            "--output_fasta",
+            str(out),
+        ]
+    )
+
+    ids, seqs = _read_fasta(out)
+    assert list(ids) == ["x_a"]
+    assert seqs == ["AAA"]
+
+
+def test_combine_omitting_id_suffix_is_argparse_error():
+    """SPEC017: omitting --id_suffix on assemble combine is an argparse error."""
+    parser = argparse.ArgumentParser()
+    ExogenousSequenceTools.set_parser(parser)
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "assemble",
+                "combine",
+                "--input_fasta",
+                "in.fa",
+                "--output_fasta",
+                "out.fa",
+            ]
+        )
+
+
+def test_combine_suffix_count_mismatch_raises_without_output(tmp_path: Path):
+    """SPEC017: unequal --input_fasta and --id_suffix counts raise ValueError; no output."""
+    fasta_a = _write_fasta(tmp_path / "a.fa", ["x"], ["AAA"])
+    fasta_b = _write_fasta(tmp_path / "b.fa", ["y"], ["TTT"])
+    out = tmp_path / "out.fa"
+
+    with pytest.raises(ValueError):
+        _run_cli(
+            [
+                "assemble",
+                "combine",
+                "--input_fasta",
+                str(fasta_a),
+                "--input_fasta",
+                str(fasta_b),
+                "--id_suffix",
+                "_a",
+                "--output_fasta",
+                str(out),
+            ]
+        )
+
+    assert not out.exists()
+
+
+def test_combine_shared_ids_fail_without_distinct_suffixes(tmp_path: Path):
+    """SPEC017: duplicate output IDs name the ID and both source files."""
+    fasta_a = _write_fasta(tmp_path / "a.fa", ["shared"], ["AAA"])
+    fasta_b = _write_fasta(tmp_path / "b.fa", ["shared"], ["TTT"])
+    out = tmp_path / "out.fa"
+
+    with pytest.raises(ValueError, match=r"shared") as excinfo:
+        _run_cli(
+            [
+                "assemble",
+                "combine",
+                "--input_fasta",
+                str(fasta_a),
+                "--id_suffix",
+                "",
+                "--input_fasta",
+                str(fasta_b),
+                "--id_suffix",
+                "",
+                "--output_fasta",
+                str(out),
+            ]
+        )
+
+    message = str(excinfo.value)
+    assert "shared" in message
+    assert str(fasta_a) in message
+    assert str(fasta_b) in message
+    assert not out.exists()
+
+    out_ok = tmp_path / "ok.fa"
+    _run_cli(
+        [
+            "assemble",
+            "combine",
+            "--input_fasta",
+            str(fasta_a),
+            "--id_suffix",
+            "_a",
+            "--input_fasta",
+            str(fasta_b),
+            "--id_suffix",
+            "_b",
+            "--output_fasta",
+            str(out_ok),
+        ]
+    )
+    ids, seqs = _read_fasta(out_ok)
+    assert list(ids) == ["shared_a", "shared_b"]
+    assert seqs == ["AAA", "TTT"]
+
+
+def test_combine_duplicate_id_within_one_input(tmp_path: Path):
+    """SPEC017: duplicate IDs within one input raise ValueError after suffixing."""
+    fasta = _write_fasta(tmp_path / "a.fa", ["dup", "dup"], ["AAA", "TTT"])
+    out = tmp_path / "out.fa"
+
+    with pytest.raises(ValueError, match=r"dup") as excinfo:
+        _run_cli(
+            [
+                "assemble",
+                "combine",
+                "--input_fasta",
+                str(fasta),
+                "--id_suffix",
+                "_a",
+                "--output_fasta",
+                str(out),
+            ]
+        )
+
+    message = str(excinfo.value)
+    assert "dup_a" in message
+    assert str(fasta) in message
+    assert not out.exists()
+
+
+def test_combine_ids_collide_only_after_literal_suffixing(tmp_path: Path):
+    """SPEC017: distinct input IDs that collide after suffixing raise ValueError."""
+    fasta_a = _write_fasta(tmp_path / "a.fa", ["x"], ["AAA"])
+    fasta_b = _write_fasta(tmp_path / "b.fa", ["x_b"], ["TTT"])
+    out = tmp_path / "out.fa"
+
+    with pytest.raises(ValueError, match=r"x_b") as excinfo:
+        _run_cli(
+            [
+                "assemble",
+                "combine",
+                "--input_fasta",
+                str(fasta_a),
+                "--id_suffix",
+                "_b",
+                "--input_fasta",
+                str(fasta_b),
+                "--id_suffix",
+                "",
+                "--output_fasta",
+                str(out),
+            ]
+        )
+
+    message = str(excinfo.value)
+    assert "x_b" in message
+    assert str(fasta_a) in message
+    assert str(fasta_b) in message
+    assert not out.exists()
+
+
+def test_combine_empty_inputs_write_empty_or_skip_records(tmp_path: Path):
+    """SPEC017: empty combine inputs contribute no records; all-empty writes empty FASTA."""
+    empty_a = tmp_path / "empty_a.fa"
+    empty_a.write_text("")
+    empty_b = tmp_path / "empty_b.fa"
+    empty_b.write_text("")
+    nonempty = _write_fasta(tmp_path / "c.fa", ["c"], ["GGG"])
+    stacked = tmp_path / "stacked.fa"
+
+    _run_cli(
+        [
+            "assemble",
+            "combine",
+            "--input_fasta",
+            str(empty_a),
+            "--id_suffix",
+            "_a",
+            "--input_fasta",
+            str(nonempty),
+            "--id_suffix",
+            "",
+            "--output_fasta",
+            str(stacked),
+        ]
+    )
+    ids, seqs = _read_fasta(stacked)
+    assert list(ids) == ["c"]
+    assert seqs == ["GGG"]
+
+    all_empty = tmp_path / "all_empty.fa"
+    _run_cli(
+        [
+            "assemble",
+            "combine",
+            "--input_fasta",
+            str(empty_a),
+            "--id_suffix",
+            "",
+            "--input_fasta",
+            str(empty_b),
+            "--id_suffix",
+            "_b",
+            "--output_fasta",
+            str(all_empty),
+        ]
+    )
+    assert all_empty.exists()
+    assert all_empty.read_text() == ""
+    ids, seqs = _read_fasta(all_empty)
+    assert list(ids) == []
+    assert seqs == []
+
+
+def test_combine_refuses_existing_output_fasta(tmp_path: Path):
+    """SPEC017: existing --output_fasta is refused and left unchanged."""
+    fasta = _write_fasta(tmp_path / "a.fa", ["x"], ["AAA"])
+    out = tmp_path / "out.fa"
+    out.write_text(">keep\nGGG\n")
+
+    with pytest.raises(ValueError, match="already exists"):
+        _run_cli(
+            [
+                "assemble",
+                "combine",
+                "--input_fasta",
+                str(fasta),
+                "--id_suffix",
+                "",
+                "--output_fasta",
+                str(out),
+            ]
+        )
+
+    assert out.read_text() == ">keep\nGGG\n"
+
+
+def test_assemble_help_lists_reverse_complement():
+    """SPEC017: assemble --help lists reverse_complement with a description."""
+    parser = argparse.ArgumentParser()
+    ExogenousSequenceTools.set_parser(parser)
+    assemble_action = None
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            assemble_action = action.choices["assemble"]
+            break
+    help_text = assemble_action.format_help()
+    assert "reverse_complement" in help_text
+    assert "Reverse-complement" in help_text or "reverse-complement" in help_text
+
+
+def test_assemble_help_contrasts_combine_stacking_and_concat_joining():
+    """SPEC017: assemble --help uses collection stacking vs paired sequence joining."""
+    parser = argparse.ArgumentParser()
+    ExogenousSequenceTools.set_parser(parser)
+    assemble_action = None
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            assemble_action = action.choices["assemble"]
+            break
+    help_text = assemble_action.format_help()
+    assert "combine" in help_text
+    assert "collection stacking" in help_text.lower()
+    assert "concat" in help_text
+    assert "paired sequence joining" in help_text.lower()
+
+
 def test_barcode_too_many_elements_raises(tmp_path: Path):
     """More elements than barcodes → ValueError (SPEC017)."""
     barcodes = _write_fasta(tmp_path / "bc.fa", ["bc1"], ["AT"])
