@@ -622,3 +622,112 @@ def test_barcode_too_many_elements_raises(tmp_path: Path):
                 fasta_id_type="original",
             )
         )
+
+
+def _reverse_complement_via_cli(fasta: Path, output: Path) -> Path:
+    _run_cli(["assemble", "reverse_complement", "--fasta", str(fasta), "--output_fasta", str(output)])
+    return output
+
+
+def test_barcode_5_3_rc_preserves_canonical_terminal_identity(tmp_path: Path):
+    """SPEC017: 5_3_rc emits B + element + RC(B), stable after reversal."""
+    barcodes = _write_fasta(tmp_path / "bc.fa", ["bc1", "bc2"], ["AAGC", "GCTT"])
+    elements = _write_fasta(tmp_path / "elements.fa", ["e1", "e2"], ["CCAA", "TTGG"])
+    out = tmp_path / "out.fa"
+    metadata = tmp_path / "metadata.csv"
+
+    _run_cli([
+        "assemble", "barcode", "--barcode_fasta", str(barcodes),
+        "--input_fasta", str(elements), "--input_class", "enhancer",
+        "--barcode_method", "5_3_rc", "--output_fasta", str(out),
+        "--metadata_path", str(metadata),
+    ])
+
+    ids, assembled = _read_fasta(out)
+    assert list(ids) == ["e1", "e2"]
+    assert assembled == ["AAGCCCAAGCTT", "GCTTTTGGAAGC"]
+    reversed_ids, reversed_seqs = _read_fasta(_reverse_complement_via_cli(out, tmp_path / "reversed.fa"))
+    assert list(reversed_ids) == ["e1", "e2"]
+    assert reversed_seqs == ["AAGCTTGGGCTT", "GCTTCCAAAAGC"]
+    df = pd.read_csv(metadata)
+    assert df["barcode"].tolist() == ["AAGC", "GCTT"]
+    assert df["elem_seq"].tolist() == assembled
+
+
+@pytest.mark.parametrize(
+    ("method", "expected"),
+    [("5", "AAGCCCAA"), ("3", "CCAAAAGC"), ("5_3", "AAGCCCAAAAGC"), (None, "AAGCCCAAAAGC")],
+)
+def test_barcode_modes_keep_historical_construction(tmp_path: Path, method: str | None, expected: str):
+    """SPEC017: explicit legacy modes and default retain their formulas."""
+    barcodes = _write_fasta(tmp_path / "bc.fa", ["bc"], ["AAGC"])
+    elements = _write_fasta(tmp_path / "elements.fa", ["e"], ["CCAA"])
+    out, metadata = tmp_path / "out.fa", tmp_path / "metadata.csv"
+    argv = ["assemble", "barcode", "--barcode_fasta", str(barcodes), "--input_fasta", str(elements), "--input_class", "x", "--output_fasta", str(out), "--metadata_path", str(metadata)]
+    if method is not None:
+        argv.extend(["--barcode_method", method])
+    _run_cli(argv)
+    assert _read_fasta(out)[1] == [expected]
+
+
+@pytest.mark.parametrize("method", ["5", "3", "5_3", "5_3_rc"])
+@pytest.mark.parametrize("invalid", ["AN", "A-N", "AX"])
+def test_barcode_rejects_invalid_assigned_sequences_before_writing(tmp_path: Path, method: str, invalid: str):
+    """SPEC017: every mode rejects non-ACGT assigned barcodes pre-write."""
+    barcodes = _write_fasta(tmp_path / "bc.fa", ["good", "bad", "unused"], ["AC", invalid, "N!"])
+    elements = _write_fasta(tmp_path / "elements.fa", ["e1", "e2"], ["NN", "R"])
+    out, metadata = tmp_path / "out.fa", tmp_path / "metadata.csv"
+    with pytest.raises(ValueError, match="A/C/G/T"):
+        _run_cli(["assemble", "barcode", "--barcode_fasta", str(barcodes), "--input_fasta", str(elements), "--input_class", "x", "--barcode_method", method, "--output_fasta", str(out), "--metadata_path", str(metadata)])
+    assert not out.exists() and not metadata.exists()
+
+
+@pytest.mark.parametrize("method", ["5", "3", "5_3", "5_3_rc"])
+def test_barcode_validation_preserves_existing_outputs_and_ignores_unused(tmp_path: Path, method: str):
+    """SPEC017: unused records and element alphabet are unaffected; validation precedes writes."""
+    barcodes = _write_fasta(tmp_path / "bc.fa", ["used", "unused"], ["aCgT", "N!"])
+    elements = _write_fasta(tmp_path / "elements.fa", ["e1"], ["NR"])
+    out, metadata = tmp_path / "out.fa", tmp_path / "metadata.csv"
+    _run_cli(["assemble", "barcode", "--barcode_fasta", str(barcodes), "--input_fasta", str(elements), "--input_class", "x", "--barcode_method", method, "--output_fasta", str(out), "--metadata_path", str(metadata)])
+    seq = _read_fasta(out)[1][0]
+    assert "NR" in seq
+    assert pd.read_csv(metadata)["barcode"].tolist() == ["aCgT"]
+    out.write_text("old fasta")
+    metadata.write_text("old metadata")
+    bad_barcodes = _write_fasta(tmp_path / "bad.fa", ["good", "bad"], ["AC", "N"])
+    two_elements = _write_fasta(tmp_path / "two-elements.fa", ["e1", "e2"], ["NR", "A"])
+    with pytest.raises(ValueError, match="A/C/G/T"):
+        _run_cli(["assemble", "barcode", "--barcode_fasta", str(bad_barcodes), "--input_fasta", str(two_elements), "--input_class", "x", "--barcode_method", method, "--output_fasta", str(out), "--metadata_path", str(metadata)])
+    assert out.read_text() == "old fasta"
+    assert metadata.read_text() == "old metadata"
+
+
+def test_barcode_5_3_rc_preserves_case_and_palindromes(tmp_path: Path):
+    """SPEC017: RC barcode mode preserves input case and accepts palindromes."""
+    barcodes = _write_fasta(tmp_path / "bc.fa", ["mixed", "pal"], ["aAgC", "ATAT"])
+    elements = _write_fasta(tmp_path / "elements.fa", ["e1", "e2"], ["NN", "R"])
+    out, metadata = tmp_path / "out.fa", tmp_path / "metadata.csv"
+    _run_cli(["assemble", "barcode", "--barcode_fasta", str(barcodes), "--input_fasta", str(elements), "--input_class", "x", "--barcode_method", "5_3_rc", "--output_fasta", str(out), "--metadata_path", str(metadata)])
+    seqs = _read_fasta(out)[1]
+    assert seqs == ["aAgCNNGcTt", "ATATRATAT"]
+    df = pd.read_csv(metadata)
+    assert df["barcode"].tolist() == ["aAgC", "ATAT"]
+    assert df["elem_seq"].tolist() == seqs
+
+
+def test_barcode_5_3_rc_keeps_cross_input_order_and_classes(tmp_path: Path):
+    """SPEC017: barcode use and metadata follow input collection order."""
+    barcodes = _write_fasta(tmp_path / "bc.fa", ["b1", "b2", "b3"], ["AAGC", "GCTT", "ATAT"])
+    first = _write_fasta(tmp_path / "first.fa", ["e1", "e2"], ["CCAA", "TTGG"])
+    second = _write_fasta(tmp_path / "second.fa", ["e3"], ["NN"])
+    out, metadata = tmp_path / "out.fa", tmp_path / "metadata.csv"
+    _run_cli(["assemble", "barcode", "--barcode_fasta", str(barcodes), "--input_fasta", str(first), "--input_class", "first-class", "--input_fasta", str(second), "--input_class", "second-class", "--barcode_method", "5_3_rc", "--output_fasta", str(out), "--metadata_path", str(metadata)])
+    ids, seqs = _read_fasta(out)
+    assert list(ids) == ["e1", "e2", "e3"]
+    assert seqs == ["AAGCCCAAGCTT", "GCTTTTGGAAGC", "ATATNNATAT"]
+    df = pd.read_csv(metadata)
+    assert list(df.columns) == ["barcode", "class", "elem_id", "elem_seq"]
+    assert df["barcode"].tolist() == ["AAGC", "GCTT", "ATAT"]
+    assert df["class"].tolist() == ["first-class", "first-class", "second-class"]
+    assert df["elem_id"].tolist() == ids
+    assert df["elem_seq"].tolist() == seqs
