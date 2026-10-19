@@ -116,8 +116,8 @@ class ExogenousSequenceAssemble:
                             )
         
         parser.add_argument("--barcode_method",
-                            help="Method to use to add barcode to the exogenous sequences.",
-                            choices=["5", "3", "5_3"],
+                            help="Barcode layout: 5, 3, 5_3, or 5_3_rc (default 5_3). Assigned barcodes must use A/C/G/T.",
+                            choices=["5", "3", "5_3", "5_3_rc"],
                             default="5_3",
                             )
 
@@ -220,6 +220,13 @@ class ExogenousSequenceAssemble:
         total_elem_num = sum(input_elem_nums)
         if total_elem_num > barcode_es.get_num_regions():
             raise ValueError("Total number of elements in the input fasta files is greater than the number of regions in the barcode fasta file.")
+
+        assigned_barcodes = barcode_seqs[:total_elem_num]
+        for index, barcode_seq in enumerate(assigned_barcodes):
+            if any(base not in "ACGTacgt" for base in barcode_seq):
+                raise ValueError(
+                    f"Assigned barcode at position {index + 1} must contain only A/C/G/T: {barcode_seq!r}"
+                )
         
         metadata_df = pd.DataFrame(columns=["barcode", "class", "elem_id", "elem_seq"])
         output_seqs = []
@@ -235,6 +242,8 @@ class ExogenousSequenceAssemble:
                     oseq = elem_seq + barcode_seq
                 elif args.barcode_method == "5_3":
                     oseq = barcode_seq + elem_seq + barcode_seq
+                elif args.barcode_method == "5_3_rc":
+                    oseq = barcode_seq + elem_seq + reverse_complement_iupac(barcode_seq)
                 else:
                     raise ValueError(f"Invalid barcode method: {args.barcode_method}")
                 
