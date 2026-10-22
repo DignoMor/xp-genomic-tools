@@ -424,17 +424,37 @@ def iter_barcodes(
     meme: MemeMotif | None = None,
     exclusions: Sequence[MotifExclusion] | None = None,
     max_candidates: int = 1_000_000,
+    exclude_rc_collisions: bool = False,
 ) -> Iterator[str]:
-    """Enumerate barcode sequences in supplied-alphabet Cartesian order."""
+    """Enumerate barcodes in supplied-alphabet Cartesian order.
+
+    With ``exclude_rc_collisions=True``, keep only the first motif-eligible
+    member of each distinct reverse-complement pair. This mode requires a
+    nonempty unique uppercase A/C/G/T string alphabet and remains streaming.
+    The keyword defaults to ``False``; self-reverse-complement barcodes remain
+    eligible.
+    """
     if barcode_length <= 0:
         raise ValueError(
             f"barcode_length must be a positive integer, found {barcode_length}."
+        )
+    if exclude_rc_collisions and not isinstance(alphabet, str):
+        raise ValueError(
+            "alphabet must be a string containing a nonempty uppercase subset of A/C/G/T "
+            "when exclude_rc_collisions is enabled."
         )
     if not alphabet:
         raise ValueError("alphabet must contain at least one character.")
     if len(set(alphabet)) != len(alphabet):
         raise ValueError(
             f"alphabet characters must be unique, found duplicate symbols in {alphabet!r}."
+        )
+    if exclude_rc_collisions and (
+        not set(alphabet) <= set("ACGT") or not alphabet
+    ):
+        raise ValueError(
+            "alphabet must be a nonempty, unique-character uppercase subset of A/C/G/T "
+            "when exclude_rc_collisions is enabled."
         )
     if max_candidates <= 0:
         raise ValueError(
@@ -460,10 +480,27 @@ def iter_barcodes(
         )
 
     symbols = list(alphabet)
+    symbol_rank = {symbol: index for index, symbol in enumerate(symbols)}
+    complement = str.maketrans("ACGT", "TGCA")
     for candidate_tuple in product(symbols, repeat=barcode_length):
         candidate = "".join(candidate_tuple)
         if candidate_violates_exclusions(candidate, meme, exclusion_tuple):
             continue
+        if exclude_rc_collisions:
+            reverse_complement = candidate.translate(complement)[::-1]
+            if reverse_complement != candidate and all(
+                symbol in symbol_rank for symbol in reverse_complement
+            ):
+                candidate_rank = tuple(symbol_rank[symbol] for symbol in candidate)
+                reverse_rank = tuple(
+                    symbol_rank[symbol] for symbol in reverse_complement
+                )
+                if reverse_rank < candidate_rank and not candidate_violates_exclusions(
+                    reverse_complement, meme, exclusion_tuple
+                ):
+                    # This earlier RC cannot have been suppressed by the current,
+                    # later candidate, so motif eligibility makes it accepted.
+                    continue
         yield candidate
 
 
