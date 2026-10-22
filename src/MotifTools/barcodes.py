@@ -32,6 +32,12 @@ class Barcodes:
             help="Motif exclusion MOTIF=CUTOFF (repeatable).",
         )
         parser.add_argument(
+            "--exclude_rc_collisions",
+            action="store_true",
+            default=False,
+            help="Keep the first accepted barcode from each reverse-complement pair (requires uppercase A/C/G/T alphabet).",
+        )
+        parser.add_argument(
             "--max_candidates",
             type=int,
             default=1000000,
@@ -60,6 +66,7 @@ class Barcodes:
             meme=meme,
             exclusions=exclusions,
             max_candidates=args.max_candidates,
+            exclude_rc_collisions=args.exclude_rc_collisions,
         )
         records = [
             (f"barcode_{index}", barcode)

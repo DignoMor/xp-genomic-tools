@@ -30,7 +30,7 @@ class MotifTools:
 
         parser_barcodes = subparsers.add_parser(
             "barcodes",
-            help="Enumerate motif-filtered barcodes.",
+            help="Enumerate barcodes with optional motif and reverse-complement exclusions.",
         )
         Barcodes.set_parser(parser_barcodes)
 

@@ -81,6 +81,16 @@ def test_spec022_anti_motif_flags():
     assert {"--motif_file", "--output", "--force"}.issubset(option_strings)
 
 
+def test_spec022_barcodes_exposes_opt_in_rc_collision_flag():
+    """The barcode RC option is a default-false presence flag (SPEC022)."""
+    action = _subparsers_action(_build_parser())
+    command = action.choices["barcodes"]
+    option = next(a for a in command._actions if a.dest == "exclude_rc_collisions")
+    assert option.option_strings == ["--exclude_rc_collisions"]
+    assert option.default is False
+    assert option.nargs == 0
+
+
 def test_spec022_unknown_subcommand_raises_value_error():
     """Unknown top-level subcommand → ValueError (SPEC022)."""
     with pytest.raises(ValueError, match="[Ss]ubcommand"):
